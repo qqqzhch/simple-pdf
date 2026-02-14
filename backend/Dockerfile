@@ -2,21 +2,24 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 安装系统依赖
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
+    gcc \
     libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制依赖
+# Copy requirements first (for better caching)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 复制代码
+# Copy application code
 COPY main.py .
 
-# 创建临时目录
+# Create temp directory for file processing
 RUN mkdir -p /tmp/simplepdf
 
+# Expose the port
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use Railway's PORT env var if available, otherwise default to 8000
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
