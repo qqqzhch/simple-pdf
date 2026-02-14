@@ -1,5 +1,5 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import shutil
 import os
@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import io
 
 app = FastAPI(title="SimplePDF API", version="1.0.0")
 
