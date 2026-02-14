@@ -1,0 +1,9 @@
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+pdf2docx==0.1.8
+pypdf2==3.0.1
+pillow==10.2.0
+redis==5.0.1
+celery==5.3.6
+python-magic==0.4.27
