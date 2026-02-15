@@ -443,16 +443,27 @@ function ToolPage() {
 
         {/* 模式选择 */}
         <div className="flex gap-2 mb-4">
-          {['custom', 'all', 'range'].map((mode) => (
+          {(['custom', 'all', 'range'] as const).map((mode) => (
             <button
               key={mode}
               onClick={() => {
-                setSplitConfig(prev => prev ? { ...prev, pageMode: mode as any } : null)
-                if (mode === 'all') {
-                  setSplitConfig(prev => prev ? { ...prev, selectedPages: `1-${totalPages}` } : null)
-                } else if (mode === 'range') {
-                  setSplitConfig(prev => prev ? { ...prev, selectedPages: '' } : null)
-                }
+                setSplitConfig(prev => {
+                  if (!prev) return null
+                  
+                  // 根据模式设置默认值
+                  let selectedPages = prev.selectedPages
+                  if (mode === 'all') {
+                    selectedPages = `1-${totalPages}`
+                  } else if (mode === 'range') {
+                    selectedPages = ''
+                  }
+                  
+                  return { 
+                    ...prev, 
+                    pageMode: mode,
+                    selectedPages 
+                  }
+                })
               }}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 splitConfig.pageMode === mode
@@ -513,7 +524,7 @@ function ToolPage() {
           </div>
         )}
 
-        {/* 输入框 - 所有模式都显示 */}
+        {/* 输入框 - 所有模式都显示，但只在 Custom 模式下可编辑 */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-slate-700 mb-2">
             Page selection (e.g., 1,3,5-10)
@@ -521,14 +532,24 @@ function ToolPage() {
           <input
             type="text"
             value={splitConfig.selectedPages}
-            onChange={(e) => setSplitConfig(prev => prev ? { 
-              ...prev, 
-              selectedPages: e.target.value,
-              pageMode: 'custom'
-            } : null)}
-            placeholder="Enter page numbers or ranges"
-            className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
+            onChange={(e) => {
+              // 只有在 Custom 模式下才允许直接编辑
+              if (splitConfig.pageMode === 'custom') {
+                setSplitConfig(prev => prev ? { 
+                  ...prev, 
+                  selectedPages: e.target.value
+                } : null)
+              }
+            }}
+            readOnly={splitConfig.pageMode !== 'custom'}
+            placeholder={splitConfig.pageMode === 'all' ? 'All pages selected' : 'Enter page numbers or ranges'}
+            className={`w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 ${
+              splitConfig.pageMode !== 'custom' ? 'bg-slate-50 text-slate-500' : ''
+            }`}
           />
+          {splitConfig.pageMode === 'all' && (
+            <p className="text-xs text-slate-500 mt-1">All {totalPages} pages will be extracted</p>
+          )}
         </div>
 
         {/* 拆分按钮 */}
