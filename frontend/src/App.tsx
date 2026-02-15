@@ -5,7 +5,7 @@ import { filesize } from 'filesize'
 import { 
   Upload, FileText, Download, X, Check, Loader2, 
   FileUp, Combine, Scissors, Zap, ArrowRight,
-  FileCheck, Trash2, AlertCircle, Shield, Clock
+  FileCheck, Trash2, AlertCircle, Shield, Clock, Sparkles
 } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -95,7 +95,6 @@ const formatTimeRemaining = (progress: number): string => {
   if (progress >= 95) return 'Almost done...'
   if (progress >= 80) return 'About 5s left'
   if (progress >= 60) return 'About 10s left'
-  if (progress >= 40) return 'About 20s left'
   return 'Processing...'
 }
 
@@ -103,125 +102,82 @@ const formatTimeRemaining = (progress: number): string => {
 // COMPONENTS
 // ============================================
 
-// Section Label Badge
-const SectionLabel = ({ text }: { text: string }) => (
-  <div className="section-label">
-    <span className="section-label-dot animate-pulse-slow" />
-    <span className="section-label-text">{text}</span>
-  </div>
-)
-
 // Tool Card
-interface ToolCardProps {
-  tool: Tool
-  isActive: boolean
-  onClick: () => void
-}
-
-const ToolCard = ({ tool, isActive, onClick }: ToolCardProps) => {
+const ToolCard = ({ tool, isActive, onClick }: { tool: Tool; isActive: boolean; onClick: () => void }) => {
   const Icon = tool.icon
   
   return (
     <motion.button
       onClick={onClick}
-      whileHover={{ y: -2 }}
+      whileHover={{ y: -4 }}
       whileTap={{ scale: 0.98 }}
-      className={`group relative w-full p-6 rounded-2xl border-2 text-left transition-all duration-300 ${
-        isActive
-          ? 'border-[#0052FF]/30 bg-[#0052FF]/5 shadow-lg'
-          : 'border-[#E2E8F0] bg-white hover:border-[#64748B]/30 hover:shadow-md'
-      }`}
+      className={`tool-card ${isActive ? 'active' : ''}`}
     >
-      <div className={`icon-gradient w-12 h-12 rounded-xl mb-4 transition-transform duration-300 ${
-        isActive ? 'scale-110' : 'group-hover:scale-105'
-      }`}>
+      <div className="icon-container mb-4">
         <Icon className="w-6 h-6 text-white" />
       </div>
       
-      <h3 className={`font-semibold text-lg mb-1 transition-colors ${
-        isActive ? 'text-[#0F172A]' : 'text-[#0F172A]/80'
-      }`} style={{ fontFamily: 'Inter, sans-serif' }}>
+      <h3 className="font-semibold text-lg text-white mb-1">
         {tool.label}
       </h3>
       
-      <p className="text-sm text-[#64748B]">
+      <p className="text-sm text-white/50">
         {tool.description}
       </p>
-      
-      {isActive && (
-        <motion.div
-          layoutId="activeIndicator"
-          className="absolute top-4 right-4 w-2 h-2 rounded-full bg-[#0052FF]"
-        />
-      )}
     </motion.button>
   )
 }
 
 // Upload Zone
-interface UploadZoneProps {
-  isDragActive: boolean
-  hasFiles: boolean
-  toolColor: string
-  onClick: () => void
-  getRootProps: any
-  getInputProps: any
-}
-
 const UploadZone = ({ 
   isDragActive, 
   hasFiles, 
-  onClick, 
   getRootProps, 
   getInputProps 
-}: UploadZoneProps) => (
+}: { 
+  isDragActive: boolean
+  hasFiles: boolean
+  getRootProps: any
+  getInputProps: any
+}) => (
   <motion.div
-    initial={{ opacity: 0, scale: 0.98 }}
-    animate={{ opacity: 1, scale: 1 }}
-    exit={{ opacity: 0, scale: 0.98 }}
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    className={`dropzone flex flex-col items-center justify-center p-10 ${isDragActive ? 'active' : ''}`}
+    style={{ minHeight: hasFiles ? '180px' : '300px' }}
+    {...getRootProps()}
   >
-    <div
-      {...getRootProps()}
-      onClick={onClick}
-      className={`dropzone flex flex-col items-center justify-center p-10 transition-all duration-300 ${
-        isDragActive ? 'dropzone-active' : ''
-      }`}
-      style={{ minHeight: hasFiles ? '160px' : '320px' }}
+    <input {...getInputProps()} />
+    
+    <motion.div
+      animate={isDragActive ? { scale: 1.1, y: -8 } : { scale: 1, y: 0 }}
+      className="w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-500 to-pink-500 flex items-center justify-center mb-6 shadow-lg shadow-violet-500/30"
     >
-      <input {...getInputProps()} />
-      
-      <motion.div
-        animate={isDragActive ? { scale: 1.1, y: -5 } : { scale: 1, y: 0 }}
-        className="icon-gradient w-20 h-20 rounded-2xl mb-6"
-      >
-        <Upload className="w-10 h-10 text-white" />
-      </motion.div>
-      
-      <h3 className="text-xl font-semibold text-[#0F172A] mb-2" style={{ fontFamily: 'Calistoga, Georgia, serif' }}>
-        {hasFiles ? 'Add more PDFs' : 'Drop your PDF here'}
-      </h3>
-      
-      <p className="text-[#64748B] mb-4">
-        or click to browse
-      </p>
-      
-      <div className="flex items-center gap-3 text-sm text-[#64748B]/70">
-        <FileCheck className="w-4 h-4" />
-        <span>Max 50MB</span>
-      </div>
+      <Upload className="w-10 h-10 text-white" />
+    </motion.div>
+    
+    <h3 className="text-2xl font-bold text-white mb-2">
+      {hasFiles ? 'Add more PDFs' : 'Drop your PDF here'}
+    </h3>
+    
+    <p className="text-white/50 mb-6">
+      or click to browse from your computer
+    </p>
+    
+    <div className="flex items-center gap-2 text-sm text-white/40">
+      <FileCheck className="w-4 h-4" />
+      <span>Max 50MB per file</span>
     </div>
   </motion.div>
 )
 
 // File Card
-interface FileCardProps {
+const FileCard = ({ file, index, onRemove, onDownload }: { 
   file: PDFFile
   index: number
   onRemove: () => void
   onDownload: () => void
-}
-
-const FileCard = ({ file, index, onRemove, onDownload }: FileCardProps) => {
+}) => {
   const simulatedProgress = useSimulatedProgress(file.status, file.progress)
   const isProcessing = file.status === 'uploading' || file.status === 'processing'
   const isDone = file.status === 'done'
@@ -229,17 +185,17 @@ const FileCard = ({ file, index, onRemove, onDownload }: FileCardProps) => {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, x: 100 }}
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 20 }}
       transition={{ delay: index * 0.05 }}
-      className="card group"
+      className="glass-card p-5"
     >
-      <div className="flex items-start gap-4">
+      <div className="flex items-center gap-4">
         {/* File Icon */}
         <div className="relative shrink-0">
-          <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#F1F5F9] to-white border border-[#E2E8F0] flex items-center justify-center">
-            <FileText className="w-7 h-7 text-[#0052FF]" />
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500/20 to-pink-500/20 border border-violet-500/30 flex items-center justify-center">
+            <FileText className="w-6 h-6 text-violet-400" />
           </div>
           
           <AnimatePresence>
@@ -247,7 +203,7 @@ const FileCard = ({ file, index, onRemove, onDownload }: FileCardProps) => {
               <motion.div
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
-                className="status-badge status-badge-success"
+                className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full status-success flex items-center justify-center"
               >
                 <Check className="w-3 h-3 text-white" />
               </motion.div>
@@ -256,7 +212,7 @@ const FileCard = ({ file, index, onRemove, onDownload }: FileCardProps) => {
               <motion.div
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
-                className="status-badge status-badge-error"
+                className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full status-error flex items-center justify-center"
               >
                 <X className="w-3 h-3 text-white" />
               </motion.div>
@@ -267,37 +223,35 @@ const FileCard = ({ file, index, onRemove, onDownload }: FileCardProps) => {
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 mb-1">
-            <p className="font-semibold text-[#0F172A] truncate" style={{ fontFamily: 'Inter, sans-serif' }}>
+            <p className="font-medium text-white truncate">
               {file.name}
             </p>
-            <span className="text-xs text-[#64748B] shrink-0">
+            <span className="text-xs text-white/40 shrink-0">
               {filesize(file.size)}
             </span>
           </div>
           
-          {/* Progress */}
           {isProcessing && (
             <div className="mt-3">
-              <div className="progress-bar">
+              <div className="progress-container">
                 <motion.div
-                  className="progress-bar-fill"
+                  className="progress-bar"
                   initial={{ width: 0 }}
                   animate={{ width: `${simulatedProgress}%` }}
-                  transition={{ duration: 0.2 }}
                 />
               </div>
               <div className="flex items-center justify-between mt-2">
                 <div className="flex items-center gap-2">
-                  <Loader2 className="w-3.5 h-3.5 text-[#0052FF] animate-spin" />
-                  <span className="text-xs text-[#64748B]">
+                  <Loader2 className="w-3.5 h-3.5 text-violet-400 animate-spin" />
+                  <span className="text-xs text-white/50">
                     {file.status === 'uploading' ? 'Uploading...' : 'Converting...'}
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-xs text-[#64748B]/70">
+                  <span className="text-xs text-white/30">
                     {formatTimeRemaining(simulatedProgress)}
                   </span>
-                  <span className="text-xs font-medium text-[#0F172A] min-w-[36px] text-right">
+                  <span className="text-xs font-medium text-white/70 min-w-[36px] text-right">
                     {Math.round(simulatedProgress)}%
                   </span>
                 </div>
@@ -305,27 +259,25 @@ const FileCard = ({ file, index, onRemove, onDownload }: FileCardProps) => {
             </div>
           )}
           
-          {/* Error */}
           {isError && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="flex items-center gap-1.5 mt-2 text-sm text-red-600"
+              className="flex items-center gap-1.5 mt-2 text-sm text-red-400"
             >
               <AlertCircle className="w-4 h-4" />
               <span>{file.error || 'Conversion failed'}</span>
             </motion.div>
           )}
           
-          {/* Success */}
           {isDone && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="flex items-center gap-1.5 mt-2 text-sm text-emerald-600"
+              className="flex items-center gap-1.5 mt-2 text-sm text-emerald-400"
             >
               <Check className="w-4 h-4" />
-              <span>Ready for download</span>
+              <span>Ready to download</span>
             </motion.div>
           )}
         </div>
@@ -337,13 +289,13 @@ const FileCard = ({ file, index, onRemove, onDownload }: FileCardProps) => {
               <motion.button
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={onDownload}
-                className="btn-primary text-sm"
+                className="btn-primary text-sm py-2 px-4"
               >
                 <Download className="w-4 h-4" />
-                Download
+                <span>Download</span>
               </motion.button>
             )}
           </AnimatePresence>
@@ -352,7 +304,7 @@ const FileCard = ({ file, index, onRemove, onDownload }: FileCardProps) => {
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={onRemove}
-            className="w-10 h-10 flex items-center justify-center text-[#64748B] hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+            className="w-10 h-10 flex items-center justify-center text-white/40 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors"
           >
             <X className="w-5 h-5" />
           </motion.button>
@@ -363,26 +315,20 @@ const FileCard = ({ file, index, onRemove, onDownload }: FileCardProps) => {
 }
 
 // Feature Card
-interface FeatureCardProps {
+const FeatureCard = ({ icon: Icon, title, description }: { 
   icon: React.ElementType
   title: string
   description: string
-}
-
-const FeatureCard = ({ icon: Icon, title, description }: FeatureCardProps) => (
+}) => (
   <motion.div
     whileHover={{ y: -4 }}
-    className="card group"
+    className="glass-card p-6 text-center"
   >
-    <div className="icon-gradient w-12 h-12 rounded-xl mb-4 group-hover:scale-110 transition-transform duration-300">
-      <Icon className="w-6 h-6 text-white" />
+    <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-violet-500/20 to-pink-500/20 border border-violet-500/30 flex items-center justify-center mb-4">
+      <Icon className="w-7 h-7 text-violet-400" />
     </div>
-    <h3 className="font-semibold text-lg text-[#0F172A] mb-2" style={{ fontFamily: 'Inter, sans-serif' }}>
-      {title}
-    </h3>
-    <p className="text-sm text-[#64748B] leading-relaxed">
-      {description}
-    </p>
+    <h3 className="font-semibold text-lg text-white mb-2">{title}</h3>
+    <p className="text-sm text-white/50 leading-relaxed">{description}</p>
   </motion.div>
 )
 
@@ -399,7 +345,7 @@ function App() {
     addFiles(pdfFiles)
   }, [activeTab, files.length])
 
-  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { 'application/pdf': ['.pdf'] },
     multiple: activeTab === 'merge',
@@ -408,8 +354,7 @@ function App() {
 
   const addFiles = (newFiles: File[]) => {
     const maxFiles = activeTab === 'merge' ? 10 : 1
-    const currentCount = files.length
-    const remainingSlots = maxFiles - currentCount
+    const remainingSlots = maxFiles - files.length
     
     if (remainingSlots <= 0) {
       alert(`Maximum ${maxFiles} file(s) allowed`)
@@ -568,81 +513,81 @@ function App() {
   const showUploadArea = files.length === 0 || activeTab === 'merge'
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA]">
+    <div className="min-h-screen bg-[#0a0a0f] relative overflow-hidden">
+      {/* Background Effects */}
+      <div className="bg-grid absolute inset-0" />
+      <div className="glow-purple -top-40 -right-40" />
+      <div className="glow-blue bottom-0 -left-40" />
+      
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-[#E2E8F0]">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4">
+      <header className="relative z-10 border-b border-white/10">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5">
           <div className="flex items-center gap-3">
-            <div className="icon-gradient w-10 h-10 rounded-xl">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-pink-500 flex items-center justify-center shadow-lg shadow-violet-500/30">
               <FileText className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-[#0F172A]" style={{ fontFamily: 'Calistoga, Georgia, serif' }}>
-                SimplePDF
-              </h1>
-              <p className="text-xs text-[#64748B] font-medium">Free PDF Tools</p>
+              <h1 className="text-xl font-bold text-white">SimplePDF</h1>
+              <p className="text-xs text-white/50 font-medium">Free PDF Tools</p>
             </div>
           </div>
         </div>
       </header>
 
       {/* Hero Section */}
-      <section className="relative overflow-hidden pt-16 pb-12">
-        {/* Background Glow */}
-        <div className="glow-accent -top-40 -right-40" />
-        
-        <div className="relative max-w-6xl mx-auto px-4 sm:px-6">
-          <div className="text-center">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mb-8"
-            >
-              <SectionLabel text="Free Forever" />
-            </motion.div>
-            
-            <motion.h2
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="text-5xl sm:text-6xl lg:text-7xl text-[#0F172A] mb-6 tracking-tight"
-              style={{ fontFamily: 'Calistoga, Georgia, serif', lineHeight: 1.05 }}
-            >
-              Convert PDF Files
-              <span className="block gradient-text">In Seconds</span>
-            </motion.h2>
-            
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.2 }}
-              className="text-lg text-[#64748B] max-w-xl mx-auto mb-8"
-              style={{ fontFamily: 'Inter, sans-serif', lineHeight: 1.625 }}
-            >
-              The simplest PDF converter. No ads, no watermarks, completely free.
-            </motion.p>
-            
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3 }}
-              className="flex items-center justify-center gap-6 text-sm text-[#64748B]"
-            >
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-emerald-500" />
-                <span>Secure & Private</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-[#0052FF]" />
-                <span>Auto-delete in 1 hour</span>
-              </div>
-            </motion.div>
-          </div>
+      <section className="relative z-10 pt-20 pb-16">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8"
+          >
+            <div className="section-badge">
+              <div className="section-badge-dot" />
+              <span>Free Forever</span>
+            </div>
+          </motion.div>
+          
+          <motion.h2
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="text-5xl sm:text-6xl lg:text-7xl font-bold mb-6 leading-tight"
+          >
+            <span className="text-white">Convert PDF</span>
+            <br />
+            <span className="gradient-text-hero">Files in Seconds</span>
+          </motion.h2>
+          
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="text-lg text-white/60 max-w-xl mx-auto mb-8"
+          >
+            The simplest PDF converter. No ads, no watermarks, completely free.
+          </motion.p>
+          
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="flex items-center justify-center gap-6 text-sm text-white/50"
+          >
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4 text-emerald-400" />
+              <span>Secure & Private</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-violet-400" />
+              <span>Auto-delete in 1 hour</span>
+            </div>
+          </motion.div>
         </div>
       </section>
 
       {/* Main Content */}
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 pb-24">
+      <main className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 pb-20">
         {/* Tool Selection */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -673,8 +618,8 @@ function App() {
               exit={{ opacity: 0, height: 0 }}
               className="mb-6"
             >
-              <div className="card">
-                <label className="block text-sm font-semibold text-[#0F172A] mb-2" style={{ fontFamily: 'Inter, sans-serif' }}>
+              <div className="glass-card p-5">
+                <label className="block text-sm font-medium text-white mb-3">
                   Pages to Extract
                 </label>
                 <input
@@ -682,9 +627,9 @@ function App() {
                   value={splitPages}
                   onChange={(e) => setSplitPages(e.target.value)}
                   placeholder="e.g., 1,3,5-10 or 1-5"
-                  className="input-modern"
+                  className="input-dark"
                 />
-                <p className="text-xs text-[#64748B] mt-2">
+                <p className="text-xs text-white/40 mt-2">
                   Enter page numbers separated by commas, or ranges with hyphens
                 </p>
               </div>
@@ -698,8 +643,6 @@ function App() {
             <UploadZone
               isDragActive={isDragActive}
               hasFiles={files.length > 0}
-              toolColor="from-[#0052FF] to-[#4D7CFF]"
-              onClick={() => open()}
               getRootProps={getRootProps}
               getInputProps={getInputProps}
             />
@@ -710,9 +653,8 @@ function App() {
         <AnimatePresence>
           {files.length > 0 && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
               className="mt-8 space-y-4"
             >
               {/* Merge Button */}
@@ -729,36 +671,38 @@ function App() {
                     className="btn-primary"
                   >
                     <Combine className="w-5 h-5" />
-                    Merge {files.length} PDF{files.length > 1 ? 's' : ''}
-                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                    <span>Merge {files.length} PDF{files.length > 1 ? 's' : ''}</span>
+                    <ArrowRight className="w-4 h-4" />
                   </motion.button>
                 </motion.div>
               )}
 
               {/* File Cards */}
-              {files.map((file, index) => (
-                <FileCard
-                  key={file.id}
-                  file={file}
-                  index={index}
-                  onRemove={() => removeFile(file.id)}
-                  onDownload={() => downloadFile(
-                    file.resultUrl!,
-                    file.name.replace('.pdf', activeTab === 'convert' ? '.docx' : '.pdf')
-                  )}
-                />
-              ))}
+              <div className="space-y-3">
+                {files.map((file, index) => (
+                  <FileCard
+                    key={file.id}
+                    file={file}
+                    index={index}
+                    onRemove={() => removeFile(file.id)}
+                    onDownload={() => downloadFile(
+                      file.resultUrl!,
+                      file.name.replace('.pdf', activeTab === 'convert' ? '.docx' : '.pdf')
+                    )}
+                  />
+                ))}
+              </div>
 
               {/* Clear All */}
               {files.some(f => f.status === 'done' || f.status === 'error') && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="flex justify-center"
+                  className="flex justify-center pt-4"
                 >
                   <button
                     onClick={clearAllFiles}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#64748B] hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 text-sm text-white/50 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
                     Clear all
@@ -770,13 +714,17 @@ function App() {
         </AnimatePresence>
       </main>
 
-      {/* Features Section (Inverted) */}
-      <section className="section-inverted py-24">
+      {/* Features Section */}
+      <section className="relative z-10 border-t border-white/10 py-20">
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <div className="text-center mb-16">
-            <SectionLabel text="Why Choose Us" />
-            <h2 className="text-4xl sm:text-5xl mt-6" style={{ fontFamily: 'Calistoga, Georgia, serif' }}>
-              Simple, Fast, <span className="gradient-text">Secure</span>
+          <div className="text-center mb-12">
+            <div className="section-badge mb-6">
+              <Sparkles className="w-4 h-4" />
+              <span>Why Choose Us</span>
+            </div>
+            <h2 className="text-4xl sm:text-5xl font-bold">
+              <span className="text-white">Simple, Fast, </span>
+              <span className="gradient-text">Secure</span>
             </h2>
           </div>
           
@@ -801,18 +749,16 @@ function App() {
       </section>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-[#E2E8F0] py-8">
+      <footer className="relative z-10 border-t border-white/10 py-8">
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="icon-gradient w-8 h-8 rounded-lg">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-pink-500 flex items-center justify-center">
                 <FileText className="w-4 h-4 text-white" />
               </div>
-              <span className="font-semibold text-[#0F172A]" style={{ fontFamily: 'Calistoga, Georgia, serif' }}>
-                SimplePDF
-              </span>
+              <span className="font-semibold text-white">SimplePDF</span>
             </div>
-            <p className="text-sm text-[#64748B]">
+            <p className="text-sm text-white/40">
               © 2025 SimplePDF. Free PDF tools for everyone.
             </p>
           </div>
