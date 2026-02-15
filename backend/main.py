@@ -624,7 +624,7 @@ async def convert_image_to_pdf(
 @app.get("/api/health")
 async def health_check():
     """健康检查"""
-    return {"status": "ok", "service": "simplepdf-api", "version": "1.0.0"}
+    return {"status": "ok", "service": "simplepdf-api", "version": "1.0.1"}
 
 if __name__ == "__main__":
     import uvicorn
