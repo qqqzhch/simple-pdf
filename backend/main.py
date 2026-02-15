@@ -431,6 +431,8 @@ async def convert_pdf_to_image(
     dpi: int = Form(150)  # 分辨率
 ):
     """将 PDF 转换为图片（每页一张）"""
+    print(f"pdf-to-image called: format={format}, dpi={dpi}, file={file.filename}")
+    
     if not file.filename.endswith('.pdf'):
         raise HTTPException(400, "Only PDF files allowed")
     
@@ -440,58 +442,70 @@ async def convert_pdf_to_image(
     if dpi < 72 or dpi > 300:
         raise HTTPException(400, "DPI must be between 72 and 300")
     
-    import fitz  # PyMuPDF
-    import zipfile
-    from PIL import Image
+    try:
+        import fitz  # PyMuPDF
+        import zipfile
+        from PIL import Image
+        print(f"PyMuPDF version: {fitz.__doc__[:50]}")
+    except ImportError as e:
+        print(f"Import error: {e}")
+        raise HTTPException(500, f"Missing dependency: {e}")
     
     file_id = str(uuid.uuid4())
     input_path = TEMP_DIR / f"{file_id}.pdf"
     output_dir = TEMP_DIR / f"images_{file_id}"
-    output_dir.mkdir(exist_ok=True)
     
     try:
+        output_dir.mkdir(exist_ok=True)
         content = await file.read()
+        print(f"Received file: {len(content)} bytes")
         
         with open(input_path, "wb") as f:
             f.write(content)
         
         # 打开 PDF
+        print(f"Opening PDF: {input_path}")
         pdf = fitz.open(str(input_path))
+        print(f"PDF pages: {len(pdf)}")
+        
         image_files = []
         
         # 转换每一页
         for page_num in range(len(pdf)):
+            print(f"Processing page {page_num + 1}")
             page = pdf[page_num]
             
             # 设置缩放矩阵
-            mat = fitz.Matrix(dpi/72, dpi/72)  # 72 是 PDF 默认 DPI
+            mat = fitz.Matrix(dpi/72, dpi/72)
             pix = page.get_pixmap(matrix=mat)
+            print(f"  Pixmap: {pix.width}x{pix.height}, n={pix.n}")
             
             # 保存图片
             ext = "png" if format == "png" else "jpg"
             image_path = output_dir / f"page_{page_num + 1}.{ext}"
             
             if format == "png":
-                # PNG: 直接保存，支持透明度
                 pix.save(str(image_path))
             else:
-                # JPG: 需要转换为 RGB（去除透明度）
-                # 使用 pix.samples 获取原始数据（兼容新旧版本 PyMuPDF）
-                if pix.n > 3:  # 有 alpha 通道 (RGBA)
-                    # 转为 RGB
-                    img = Image.frombytes("RGBA", [pix.width, pix.height], pix.samples)
-                    # 创建白色背景并合成
-                    background = Image.new("RGB", (pix.width, pix.height), (255, 255, 255))
-                    background.paste(img, mask=img.split()[3])  # 使用 alpha 通道作为 mask
-                    img = background
-                else:  # 已经是 RGB
-                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                img.save(str(image_path), "JPEG", quality=85, optimize=True)
+                # JPG: 需要转换为 RGB
+                try:
+                    if pix.n > 3:  # RGBA
+                        img = Image.frombytes("RGBA", [pix.width, pix.height], pix.samples)
+                        background = Image.new("RGB", (pix.width, pix.height), (255, 255, 255))
+                        background.paste(img, mask=img.split()[3])
+                        img = background
+                    else:  # RGB
+                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    img.save(str(image_path), "JPEG", quality=85, optimize=True)
+                except Exception as img_error:
+                    print(f"  Image processing error: {img_error}")
+                    raise
             
             image_files.append(image_path)
-            print(f"Converted page {page_num + 1} to {image_path}")
+            print(f"  Saved: {image_path}")
         
         pdf.close()
+        print(f"Total images: {len(image_files)}")
         
         if not image_files:
             raise HTTPException(400, "No pages could be converted")
@@ -529,6 +543,9 @@ async def convert_pdf_to_image(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        print(f"PDF to Image ERROR: {error_detail}")
         # 清理临时文件
         if input_path.exists():
             input_path.unlink()
