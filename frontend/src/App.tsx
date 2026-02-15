@@ -829,14 +829,22 @@ function ToolPage() {
                         <div className="mt-3 flex items-center gap-3">
                           <div className="flex-1 flex items-center gap-1.5 text-sm text-emerald-600 bg-emerald-50 px-3 py-2 rounded-lg">
                             <Check className="w-4 h-4" />
-                            <span>Ready for download</span>
+                            <span>
+                              {tool.id === 'split' ? 'ZIP file ready' : 'Ready for download'}
+                            </span>
                           </div>
                           <button
-                            onClick={() => downloadFile(file.resultUrl!, file.name.replace('.pdf', tool.outputExt))}
+                            onClick={() => {
+                              // Split PDF 下载 ZIP，其他工具按原扩展名
+                              const downloadName = tool.id === 'split' 
+                                ? file.name.replace('.pdf', '.zip')
+                                : file.name.replace('.pdf', tool.outputExt)
+                              downloadFile(file.resultUrl!, downloadName)
+                            }}
                             className={`px-4 py-2 bg-gradient-to-r ${tool.color} text-white text-sm font-semibold rounded-lg hover:shadow-lg transition-all flex items-center gap-1.5`}
                           >
                             <Download className="w-4 h-4" />
-                            Download
+                            Download {tool.id === 'split' ? 'ZIP' : ''}
                           </button>
                         </div>
                       )}

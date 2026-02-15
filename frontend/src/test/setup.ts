@@ -2,7 +2,7 @@ import '@testing-library/jest-dom'
 import { vi } from 'vitest'
 
 // Mock fetch globally
-global.fetch = vi.fn()
+;(globalThis as any).fetch = vi.fn()
 
 // Mock matchMedia
 Object.defineProperty(window, 'matchMedia', {
@@ -20,5 +20,5 @@ Object.defineProperty(window, 'matchMedia', {
 })
 
 // Mock URL methods
-global.URL.createObjectURL = vi.fn(() => 'mock-url')
-global.URL.revokeObjectURL = vi.fn()
+URL.createObjectURL = vi.fn(() => 'mock-url')
+URL.revokeObjectURL = vi.fn()

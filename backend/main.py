@@ -134,16 +134,19 @@ async def merge_pdfs(files: list[UploadFile] = File(...)):
 @app.post("/api/split")
 async def split_pdf(
     file: UploadFile = File(...),
-    pages: str = Form(...),  # 格式: "1,3,5-10"
+    pages: str = Form(...),  # 格式: "1,3,5-10" 或 "1-2,3-4,5-5"
 ):
-    """拆分PDF"""
+    """拆分PDF - 返回ZIP压缩包"""
     if not file.filename.endswith('.pdf'):
         raise HTTPException(400, "Only PDF files allowed")
     
     from PyPDF2 import PdfReader, PdfWriter
+    import zipfile
     
     file_id = str(uuid.uuid4())
     input_path = TEMP_DIR / f"{file_id}.pdf"
+    output_dir = TEMP_DIR / f"split_{file_id}"
+    output_dir.mkdir(exist_ok=True)
     
     try:
         content = await file.read()
@@ -151,89 +154,115 @@ async def split_pdf(
             f.write(content)
         
         reader = PdfReader(str(input_path))
-        writer = PdfWriter()
         
-        # 解析页码
+        # 解析页码范围
         print(f"Split request - Pages param: '{pages}', Total PDF pages: {len(reader.pages)}")
         
         if not pages or pages.strip() == '':
             raise HTTPException(400, f"No pages specified. Received: '{pages}'")
         
-        print(f"Split request - Pages param: {pages}, Total PDF pages: {len(reader.pages)}")
+        # 解析每个分组
+        groups = []  # 每个元素是一个元组 (group_name, [page_indices])
+        group_index = 1
         
-        page_numbers = []
         for part in pages.split(','):
             part = part.strip()
             if not part:
                 continue
+            
             if '-' in part:
+                # 范围格式: "1-2" -> 提取页面 0,1
                 try:
                     start, end = map(int, part.split('-'))
                     if start < 1 or end < 1:
                         raise HTTPException(400, f"Page numbers must be >= 1: {part}")
                     if start > end:
                         raise HTTPException(400, f"Invalid range (start > end): {part}")
-                    page_numbers.extend(range(start-1, end))
+                    page_indices = list(range(start-1, end))
+                    groups.append((f"pages_{start}-{end}", page_indices))
                 except ValueError as e:
                     raise HTTPException(400, f"Invalid page range '{part}': {str(e)}")
             else:
+                # 单页格式: "5" -> 提取页面 4
                 try:
-                    num = int(part)
-                    if num < 1:
+                    page_num = int(part)
+                    if page_num < 1:
                         raise HTTPException(400, f"Page number must be >= 1: {part}")
-                    page_numbers.append(num - 1)
+                    groups.append((f"page_{page_num}", [page_num - 1]))
                 except ValueError as e:
                     raise HTTPException(400, f"Invalid page number '{part}': {str(e)}")
         
-        print(f"Parsed page indices: {page_numbers}")
-        
-        if not page_numbers:
+        if not groups:
             raise HTTPException(400, "No valid pages to extract")
         
-        # 去重并排序
-        page_numbers = sorted(set(page_numbers))
-        print(f"Unique sorted indices: {page_numbers}")
+        print(f"Parsed {len(groups)} groups: {groups}")
         
-        # 添加页面到 writer
-        added_count = 0
-        for page_num in page_numbers:
-            if 0 <= page_num < len(reader.pages):
-                try:
-                    page = reader.pages[page_num]
-                    writer.add_page(page)
-                    added_count += 1
-                except Exception as e:
-                    print(f"Error adding page {page_num + 1}: {e}")
-                    raise HTTPException(500, f"Error processing page {page_num + 1}: {str(e)}")
-            else:
-                print(f"Warning: Page index {page_num} out of range (0-{len(reader.pages)-1})")
+        # 为每个组生成一个PDF
+        generated_files = []
+        for group_name, page_indices in groups:
+            writer = PdfWriter()
+            valid_pages = []
+            
+            for page_idx in page_indices:
+                if 0 <= page_idx < len(reader.pages):
+                    try:
+                        writer.add_page(reader.pages[page_idx])
+                        valid_pages.append(page_idx + 1)  # 转换为1-based页码
+                    except Exception as e:
+                        print(f"Error adding page {page_idx + 1}: {e}")
+                else:
+                    print(f"Warning: Page index {page_idx} out of range")
+            
+            if valid_pages:
+                # 生成文件名
+                if len(valid_pages) == 1:
+                    output_filename = f"page_{valid_pages[0]}.pdf"
+                else:
+                    output_filename = f"pages_{valid_pages[0]}-{valid_pages[-1]}.pdf"
+                
+                output_path = output_dir / output_filename
+                with open(output_path, "wb") as f:
+                    writer.write(f)
+                generated_files.append(output_path)
+                print(f"Generated: {output_filename}")
         
-        if added_count == 0:
+        if not generated_files:
             raise HTTPException(400, "No pages could be extracted")
         
-        print(f"Successfully added {added_count} pages to output")
+        # 打包成ZIP
+        zip_path = TEMP_DIR / f"split_{file_id}.zip"
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for pdf_file in generated_files:
+                zipf.write(pdf_file, pdf_file.name)
         
-        output_path = TEMP_DIR / f"split_{file_id}.pdf"
-        try:
-            with open(output_path, "wb") as f:
-                writer.write(f)
-            print(f"Output file written: {output_path}")
-        except Exception as e:
-            print(f"Error writing output file: {e}")
-            raise HTTPException(500, f"Error writing PDF: {str(e)}")
+        print(f"Created ZIP: {zip_path} with {len(generated_files)} files")
         
+        # 清理临时文件
         asyncio.create_task(cleanup_file(input_path))
-        asyncio.create_task(cleanup_file(output_path))
+        for pdf_file in generated_files:
+            asyncio.create_task(cleanup_file(pdf_file))
+        asyncio.create_task(cleanup_file(zip_path))
+        
+        # 清理目录
+        import shutil
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
         
         return FileResponse(
-            path=output_path,
-            filename=f"split_{file.filename}",
-            media_type='application/pdf'
+            path=zip_path,
+            filename=f"split_{file.filename.replace('.pdf', '.zip')}",
+            media_type='application/zip'
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
+        # 清理临时文件
         if input_path.exists():
             input_path.unlink()
+        if output_dir.exists():
+            import shutil
+            shutil.rmtree(output_dir)
         raise HTTPException(500, f"Split failed: {str(e)}")
 
 @app.post("/api/pdf-info")

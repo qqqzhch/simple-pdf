@@ -4,7 +4,7 @@ import App from './App'
 
 // Mock fetch
 const mockFetch = vi.fn()
-global.fetch = mockFetch
+;(globalThis as any).fetch = mockFetch
 
 describe('Split PDF Page Selector', () => {
   beforeEach(() => {
