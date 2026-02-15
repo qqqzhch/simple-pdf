@@ -362,7 +362,7 @@ function App() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="grid md:grid-cols-3 gap-4 mb-8"
+          className="grid md:grid-cols-3 gap-4 mb-8 w-full"
         >
           {tools.map((tool) => {
             const Icon = tool.icon
@@ -376,7 +376,7 @@ function App() {
                   setFiles([])
                   setSplitPages('')
                 }}
-                className={`group relative p-5 rounded-2xl border-2 text-left transition-all duration-300 ${
+                className={`group relative w-full p-5 rounded-2xl border-2 text-left transition-all duration-300 ${
                   isActive
                     ? `${tool.bgColor} ${tool.borderColor} shadow-lg`
                     : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-md'
@@ -434,10 +434,11 @@ function App() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.3 }}
+              className="w-full"
             >
               <div
                 {...getRootProps()}
-                className={`relative group cursor-pointer rounded-3xl border-2 border-dashed transition-all duration-300 ${
+                className={`relative group cursor-pointer rounded-3xl border-2 border-dashed transition-all duration-300 w-full ${
                   isDragActive
                     ? `border-blue-500 bg-blue-50 scale-[1.01]`
                     : 'border-slate-300 hover:border-slate-400 bg-white hover:bg-slate-50'
@@ -446,7 +447,7 @@ function App() {
               >
                 <input {...getInputProps()} />
                 
-                <div className="absolute inset-0 flex flex-col items-center justify-center p-8">
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center">
                   <motion.div 
                     animate={isDragActive ? { scale: 1.1, y: -5 } : { scale: 1, y: 0 }}
                     className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${activeTool.color} flex items-center justify-center mb-4 shadow-xl`}
@@ -580,7 +581,7 @@ function FileCard({ file, index, onRemove, onDownload }: FileCardProps) {
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 20 }}
       transition={{ delay: index * 0.05 }}
-      className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow"
+      className="w-full bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow"
     >
       <div className="flex items-center gap-4">
         {/* File Icon */}
