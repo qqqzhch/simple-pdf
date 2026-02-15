@@ -369,11 +369,15 @@ function ToolPage() {
     } else if (tool.id === 'compress') {
       pdfFiles.forEach(compressPDF)
     } else if (tool.id === 'pdf-to-image') {
-      // PDF to Image: 需要等待用户选择格式
-      // 不做自动处理，等待用户点击转换按钮
+      // PDF to Image: 设置文件为 ready，等待用户选择格式后点击转换
+      setFiles(prev => prev.map(f => 
+        pdfFiles.some(pf => pf.id === f.id) ? { ...f, status: 'ready', progress: 100 } : f
+      ))
     } else if (tool.id === 'image-to-pdf') {
-      // Image to PDF: 需要等待用户选择页面尺寸
-      // 不做自动处理，等待用户点击转换按钮
+      // Image to PDF: 设置文件为 ready，等待用户选择页面尺寸后点击转换
+      setFiles(prev => prev.map(f => 
+        pdfFiles.some(pf => pf.id === f.id) ? { ...f, status: 'ready', progress: 100 } : f
+      ))
     }
   }
 
