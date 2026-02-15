@@ -2,6 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Cache buster - force rebuild on every deploy
+ARG CACHEBUST=1
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y ghostscript poppler-utils && rm -rf /var/lib/apt/lists/*
 
