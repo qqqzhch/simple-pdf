@@ -175,12 +175,20 @@ function ToolPage() {
   const tool = tools.find(t => t.id === toolId)
   
   const [files, setFiles] = useState<PDFFile[]>([])
+  // 分组类型
+  interface PageGroup {
+    id: string
+    start: number
+    end: number
+  }
+
   // Split PDF 专用状态
   const [splitConfig, setSplitConfig] = useState<{
     fileId: string
     totalPages: number
     selectedPages: string
     pageMode: 'group' | 'all' | 'range'
+    groups: PageGroup[]
   } | null>(null)
 
   if (!tool) {
@@ -259,9 +267,15 @@ function ToolPage() {
         
         // 初始化拆分配置 - 默认使用分组模式，每2页一组
         const defaultGroupSize = 2
-        const defaultPages = Array.from({length: Math.ceil(pages/defaultGroupSize)}, (_,i) => 
-          `${i*defaultGroupSize+1}-${Math.min(i*defaultGroupSize+defaultGroupSize, pages)}`
-        ).join(',')
+        const defaultGroups: PageGroup[] = Array.from(
+          {length: Math.ceil(pages/defaultGroupSize)}, 
+          (_,i) => ({
+            id: `group-${i}`,
+            start: i*defaultGroupSize+1,
+            end: Math.min(i*defaultGroupSize+defaultGroupSize, pages)
+          })
+        )
+        const defaultPages = defaultGroups.map(g => `${g.start}-${g.end}`).join(',')
         
         console.log('Initializing split config with pages:', defaultPages)
         
@@ -270,7 +284,8 @@ function ToolPage() {
           fileId: tempId,
           totalPages: pages,
           selectedPages: defaultPages,
-          pageMode: 'group'
+          pageMode: 'group',
+          groups: defaultGroups
         })
       } catch (error) {
         setFiles([{
@@ -468,12 +483,73 @@ function ToolPage() {
     ).join(',')
   }
 
-  // 页面选择器组件 - 简化版
+  // 从 groups 生成 pages 字符串
+  const generatePagesFromGroups = (groups: PageGroup[]): string => {
+    return groups.map(g => `${g.start}-${g.end}`).join(',')
+  }
+
+  // 更新单个分组
+  const updateGroup = (groupId: string, field: 'start' | 'end', value: number) => {
+    setSplitConfig(prev => {
+      if (!prev) return null
+      const newGroups = prev.groups.map(g => 
+        g.id === groupId ? { ...g, [field]: value } : g
+      )
+      return {
+        ...prev,
+        groups: newGroups,
+        selectedPages: generatePagesFromGroups(newGroups)
+      }
+    })
+  }
+
+  // 添加新分组
+  const addGroup = () => {
+    setSplitConfig(prev => {
+      if (!prev) return null
+      const totalPages = prev.totalPages
+      // 找到最后一个分组的结束页
+      const lastGroup = prev.groups[prev.groups.length - 1]
+      const newStart = lastGroup ? lastGroup.end + 1 : 1
+      
+      if (newStart > totalPages) {
+        alert('No more pages available')
+        return prev
+      }
+      
+      const newGroup: PageGroup = {
+        id: `group-${Date.now()}`,
+        start: newStart,
+        end: Math.min(newStart, totalPages)
+      }
+      
+      const newGroups = [...prev.groups, newGroup]
+      return {
+        ...prev,
+        groups: newGroups,
+        selectedPages: generatePagesFromGroups(newGroups)
+      }
+    })
+  }
+
+  // 删除分组
+  const removeGroup = (groupId: string) => {
+    setSplitConfig(prev => {
+      if (!prev) return null
+      const newGroups = prev.groups.filter(g => g.id !== groupId)
+      return {
+        ...prev,
+        groups: newGroups,
+        selectedPages: generatePagesFromGroups(newGroups)
+      }
+    })
+  }
+
+  // 页面选择器组件 - 新版
   const PageSelector = () => {
     if (!splitConfig) return null
     
     const totalPages = splitConfig.totalPages
-    const pages = Array.from({ length: totalPages }, (_, i) => i + 1)
     
     return (
       <motion.div
@@ -489,14 +565,23 @@ function ToolPage() {
           Total pages: <span className="font-semibold text-violet-600">{totalPages}</span>
         </p>
 
-        {/* 分组设置 */}
+        {/* 快速分组按钮 */}
         <div className="flex gap-3 mb-4">
           <button
             onClick={() => {
               const generated = generateGroupedPages(totalPages, groupSize)
+              const newGroups: PageGroup[] = Array.from(
+                {length: Math.ceil(totalPages/groupSize)}, 
+                (_,i) => ({
+                  id: `group-${i}`,
+                  start: i*groupSize+1,
+                  end: Math.min(i*groupSize+groupSize, totalPages)
+                })
+              )
               setSplitConfig(prev => prev ? {
                 ...prev,
                 pageMode: 'group',
+                groups: newGroups,
                 selectedPages: generated
               } : null)
             }}
@@ -506,12 +591,12 @@ function ToolPage() {
                 : 'border-slate-200 hover:border-violet-300'
             }`}
           >
-            <div className="font-medium text-sm text-slate-900">Extract pages in groups</div>
-            <div className="text-xs text-slate-500 mt-1">Split into groups of N pages</div>
+            <div className="font-medium text-sm text-slate-900">Auto Group</div>
+            <div className="text-xs text-slate-500 mt-1">Split every {groupSize} pages</div>
           </button>
           
           <div className="w-20">
-            <label className="block text-xs text-slate-500 mb-1">Pages</label>
+            <label className="block text-xs text-slate-500 mb-1">Size</label>
             <input
               type="number"
               min={1}
@@ -520,13 +605,6 @@ function ToolPage() {
               onChange={(e) => {
                 const size = Math.max(1, Math.min(totalPages, parseInt(e.target.value) || 1))
                 setGroupSize(size)
-                // 如果当前是分组模式，自动更新
-                if (splitConfig.pageMode === 'group') {
-                  setSplitConfig(prev => prev ? {
-                    ...prev,
-                    selectedPages: generateGroupedPages(totalPages, size)
-                  } : null)
-                }
               }}
               className="w-full px-3 py-2 text-center font-semibold border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
             />
@@ -546,7 +624,8 @@ function ToolPage() {
             onClick={() => setSplitConfig(prev => prev ? {
               ...prev,
               pageMode: 'all',
-              selectedPages: Array.from({length: totalPages}, (_,i) => String(i+1)).join(',')
+              selectedPages: Array.from({length: totalPages}, (_,i) => String(i+1)).join(','),
+              groups: Array.from({length: totalPages}, (_,i) => ({id: `p-${i}`, start: i+1, end: i+1}))
             } : null)}
             className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium border-2 transition-all ${
               splitConfig.pageMode === 'all'
@@ -560,89 +639,97 @@ function ToolPage() {
             onClick={() => setSplitConfig(prev => prev ? {
               ...prev,
               pageMode: 'range',
-              selectedPages: ''
+              selectedPages: generatePagesFromGroups(prev.groups)
             } : null)}
             className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium border-2 transition-all ${
-              splitConfig.pageMode === 'range'
+              splitConfig.pageMode === 'range' || splitConfig.pageMode === 'group'
                 ? 'border-violet-500 bg-violet-50 text-violet-700'
                 : 'border-slate-200 text-slate-600 hover:border-violet-300'
             }`}
           >
-            Custom
+            Custom Groups
           </button>
         </div>
 
-        {/* 自定义选择区域 - 只在 Custom 模式显示 */}
-        {splitConfig.pageMode === 'range' && (
-          <div className="border-t border-slate-200 pt-4 mt-4">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-slate-700">
-                Custom Selection
-              </label>
-            </div>
-            
-            {/* 页面网格 */}
-            <div className="grid grid-cols-10 gap-1.5 mb-3 max-h-40 overflow-y-auto p-2 bg-slate-50 rounded-xl">
-              {pages.map((pageNum) => {
-                const isSelected = splitConfig.selectedPages
-                  .split(',')
-                  .some(p => {
-                    if (p.includes('-')) {
-                      const [start, end] = p.split('-').map(Number)
-                      return pageNum >= start && pageNum <= end
-                    }
-                    return Number(p) === pageNum
-                  })
-                
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => {
-                      setSplitConfig(prev => {
-                        if (!prev) return null
-                        const current = prev.selectedPages.split(',').filter(p => p)
-                        if (isSelected) {
-                          return { ...prev, selectedPages: '' }
-                        } else {
-                          current.push(String(pageNum))
-                          return { ...prev, selectedPages: current.join(',') }
-                        }
-                      })
-                    }}
-                    className={`w-8 h-8 rounded-md text-xs font-medium transition-all ${
-                      isSelected
-                        ? 'bg-violet-500 text-white'
-                        : 'bg-white border border-slate-200 text-slate-600 hover:border-violet-300'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* 自定义输入框 */}
-            <input
-              type="text"
-              value={splitConfig.selectedPages}
-              onChange={(e) => setSplitConfig(prev => prev ? { 
-                ...prev, 
-                selectedPages: e.target.value
-              } : null)}
-              placeholder="e.g., 1,3,5-10"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
-            />
+        {/* 分组管理区域 */}
+        <div className="border-t border-slate-200 pt-4 mt-4">
+          <div className="flex items-center justify-between mb-3">
+            <label className="text-sm font-medium text-slate-700">
+              Page Groups ({splitConfig.groups.length})
+            </label>
+            <button
+              onClick={addGroup}
+              className="text-sm text-violet-600 hover:text-violet-700 font-medium flex items-center gap-1"
+            >
+              <span>+</span> Add Group
+            </button>
           </div>
-        )}
+          
+          {/* 分组列表 */}
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {splitConfig.groups.map((group, index) => (
+              <div key={group.id} className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl">
+                <span className="text-sm font-medium text-slate-500 w-6">
+                  {index + 1}
+                </span>
+                
+                <div className="flex-1 flex items-center gap-2">
+                  <div className="flex-1">
+                    <label className="text-xs text-slate-500">From</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={totalPages}
+                      value={group.start}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 1
+                        updateGroup(group.id, 'start', Math.max(1, Math.min(val, group.end)))
+                      }}
+                      className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    />
+                  </div>
+                  
+                  <span className="text-slate-400 pt-4">-</span>
+                  
+                  <div className="flex-1">
+                    <label className="text-xs text-slate-500">To</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={totalPages}
+                      value={group.end}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 1
+                        updateGroup(group.id, 'end', Math.max(group.start, Math.min(val, totalPages)))
+                      }}
+                      className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    />
+                  </div>
+                </div>
+                
+                <button
+                  onClick={() => removeGroup(group.id)}
+                  disabled={splitConfig.groups.length <= 1}
+                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* 当前选择提示 */}
         {splitConfig.selectedPages && (
           <div className="mt-4 p-3 bg-violet-50 rounded-lg">
             <p className="text-sm text-violet-700">
-              <span className="font-medium">Selected: </span>
-              {splitConfig.selectedPages.length > 50 
-                ? splitConfig.selectedPages.slice(0, 50) + '...' 
-                : splitConfig.selectedPages}
+              <span className="font-medium">Output: </span>
+              {splitConfig.groups.length} PDF{splitConfig.groups.length > 1 ? 's' : ''} 
+              <span className="text-violet-500 ml-2">
+                ({splitConfig.selectedPages.length > 40 
+                  ? splitConfig.selectedPages.slice(0, 40) + '...' 
+                  : splitConfig.selectedPages})
+              </span>
             </p>
           </div>
         )}
@@ -653,7 +740,7 @@ function ToolPage() {
           disabled={!splitConfig.selectedPages || files[0]?.status === 'processing'}
           className="w-full mt-4 py-4 bg-gradient-to-r from-violet-500 to-purple-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Split PDF
+          Split PDF into {splitConfig.groups.length} file{splitConfig.groups.length > 1 ? 's' : ''}
         </button>
       </motion.div>
     )
