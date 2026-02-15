@@ -188,15 +188,37 @@ async def split_pdf(
         if not page_numbers:
             raise HTTPException(400, "No valid pages to extract")
         
+        # 去重并排序
+        page_numbers = sorted(set(page_numbers))
+        print(f"Unique sorted indices: {page_numbers}")
+        
+        # 添加页面到 writer
+        added_count = 0
         for page_num in page_numbers:
             if 0 <= page_num < len(reader.pages):
-                writer.add_page(reader.pages[page_num])
+                try:
+                    page = reader.pages[page_num]
+                    writer.add_page(page)
+                    added_count += 1
+                except Exception as e:
+                    print(f"Error adding page {page_num + 1}: {e}")
+                    raise HTTPException(500, f"Error processing page {page_num + 1}: {str(e)}")
             else:
                 print(f"Warning: Page index {page_num} out of range (0-{len(reader.pages)-1})")
         
+        if added_count == 0:
+            raise HTTPException(400, "No pages could be extracted")
+        
+        print(f"Successfully added {added_count} pages to output")
+        
         output_path = TEMP_DIR / f"split_{file_id}.pdf"
-        with open(output_path, "wb") as f:
-            writer.write(f)
+        try:
+            with open(output_path, "wb") as f:
+                writer.write(f)
+            print(f"Output file written: {output_path}")
+        except Exception as e:
+            print(f"Error writing output file: {e}")
+            raise HTTPException(500, f"Error writing PDF: {str(e)}")
         
         asyncio.create_task(cleanup_file(input_path))
         asyncio.create_task(cleanup_file(output_path))
