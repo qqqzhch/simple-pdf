@@ -134,7 +134,7 @@ async def merge_pdfs(files: list[UploadFile] = File(...)):
 @app.post("/api/split")
 async def split_pdf(
     file: UploadFile = File(...),
-    pages: str = "",  # 格式: "1,3,5-10"
+    pages: str = Form(...),  # 格式: "1,3,5-10"
 ):
     """拆分PDF"""
     if not file.filename.endswith('.pdf'):
@@ -154,8 +154,10 @@ async def split_pdf(
         writer = PdfWriter()
         
         # 解析页码
+        print(f"Split request - Pages param: '{pages}', Total PDF pages: {len(reader.pages)}")
+        
         if not pages or pages.strip() == '':
-            raise HTTPException(400, "No pages specified")
+            raise HTTPException(400, f"No pages specified. Received: '{pages}'")
         
         print(f"Split request - Pages param: {pages}, Total PDF pages: {len(reader.pages)}")
         
