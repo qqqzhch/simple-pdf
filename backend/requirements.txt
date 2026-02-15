@@ -1,3 +1,6 @@
+# SimplePDF API Dependencies
+# Updated: 2024-02-15
+
 fastapi
 uvicorn[standard]
 python-multipart
