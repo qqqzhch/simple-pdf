@@ -180,8 +180,7 @@ function ToolPage() {
     fileId: string
     totalPages: number
     selectedPages: string
-    pageMode: 'quick' | 'custom' | 'all' | 'range'
-    quickModeId?: string | null
+    pageMode: 'group' | 'all' | 'range'
   } | null>(null)
 
   if (!tool) {
@@ -263,8 +262,7 @@ function ToolPage() {
           fileId: tempId,
           totalPages: pages,
           selectedPages: '',
-          pageMode: 'custom',
-          quickModeId: null
+          pageMode: 'range'
         })
       } catch (error) {
         setFiles([{
@@ -422,17 +420,17 @@ function ToolPage() {
     document.body.removeChild(a)
   }
 
-  // 快捷模式定义
-  const quickModes = [
-    { id: 'pairs', label: 'Extract pages in pairs', desc: 'Every 2 pages (1,2,5,6...)', getPages: (total: number) => Array.from({length: Math.ceil(total/2)}, (_,i) => `${i*2+1}-${Math.min(i*2+2,total)}`).join(',') },
-    { id: 'triple', label: 'Every 3 pages', desc: 'Groups of 3 (1-3,4-6...)', getPages: (total: number) => Array.from({length: Math.ceil(total/3)}, (_,i) => `${i*3+1}-${Math.min(i*3+3,total)}`).join(',') },
-    { id: 'odd', label: 'Odd pages only', desc: '1,3,5,7...', getPages: (total: number) => Array.from({length: Math.ceil(total/2)}, (_,i) => String(i*2+1)).join(',') },
-    { id: 'even', label: 'Even pages only', desc: '2,4,6,8...', getPages: (total: number) => Array.from({length: Math.floor(total/2)}, (_,i) => String(i*2+2)).join(',') },
-    { id: 'first10', label: 'First 10 pages', desc: 'Pages 1-10', getPages: (total: number) => `1-${Math.min(10,total)}` },
-    { id: 'last10', label: 'Last 10 pages', desc: 'Final pages', getPages: (total: number) => `${Math.max(1,total-9)}-${total}` },
-  ]
+  // 分组大小状态（用于"每N页分割"功能）
+  const [groupSize, setGroupSize] = useState(2)
 
-  // 页面选择器组件 - 新版：快捷模式 + 自定义
+  // 生成分组页面字符串（每N页一组）
+  const generateGroupedPages = (total: number, size: number): string => {
+    return Array.from({length: Math.ceil(total/size)}, (_,i) => 
+      `${i*size+1}-${Math.min(i*size+size, total)}`
+    ).join(',')
+  }
+
+  // 页面选择器组件 - 简化版
   const PageSelector = () => {
     if (!splitConfig) return null
     
@@ -453,30 +451,48 @@ function ToolPage() {
           Total pages: <span className="font-semibold text-violet-600">{totalPages}</span>
         </p>
 
-        {/* 快捷模式按钮网格 */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          {quickModes.map((mode) => (
-            <button
-              key={mode.id}
-              onClick={() => {
-                const generatedPages = mode.getPages(totalPages)
-                setSplitConfig(prev => prev ? {
-                  ...prev,
-                  pageMode: 'quick',
-                  selectedPages: generatedPages,
-                  quickModeId: mode.id
-                } : null)
+        {/* 分组设置 */}
+        <div className="flex gap-3 mb-4">
+          <button
+            onClick={() => {
+              const generated = generateGroupedPages(totalPages, groupSize)
+              setSplitConfig(prev => prev ? {
+                ...prev,
+                pageMode: 'group',
+                selectedPages: generated
+              } : null)
+            }}
+            className={`flex-1 py-3 px-4 rounded-xl border-2 text-left transition-all ${
+              splitConfig.pageMode === 'group'
+                ? 'border-violet-500 bg-violet-50'
+                : 'border-slate-200 hover:border-violet-300'
+            }`}
+          >
+            <div className="font-medium text-sm text-slate-900">Extract pages in groups</div>
+            <div className="text-xs text-slate-500 mt-1">Split every N pages</div>
+          </button>
+          
+          <div className="w-20">
+            <label className="block text-xs text-slate-500 mb-1">Pages</label>
+            <input
+              type="number"
+              min={1}
+              max={totalPages}
+              value={groupSize}
+              onChange={(e) => {
+                const size = Math.max(1, Math.min(totalPages, parseInt(e.target.value) || 1))
+                setGroupSize(size)
+                // 如果当前是分组模式，自动更新
+                if (splitConfig.pageMode === 'group') {
+                  setSplitConfig(prev => prev ? {
+                    ...prev,
+                    selectedPages: generateGroupedPages(totalPages, size)
+                  } : null)
+                }
               }}
-              className={`p-3 rounded-xl border-2 text-left transition-all ${
-                splitConfig.pageMode === 'quick' && splitConfig.quickModeId === mode.id
-                  ? 'border-violet-500 bg-violet-50'
-                  : 'border-slate-200 hover:border-violet-300 hover:bg-slate-50'
-              }`}
-            >
-              <div className="font-medium text-sm text-slate-900">{mode.label}</div>
-              <div className="text-xs text-slate-500 mt-1">{mode.desc}</div>
-            </button>
-          ))}
+              className="w-full px-3 py-2 text-center font-semibold border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+            />
+          </div>
         </div>
 
         {/* 分割线 */}
@@ -486,14 +502,13 @@ function ToolPage() {
           <div className="flex-1 h-px bg-slate-200"></div>
         </div>
 
-        {/* 全部和范围按钮 */}
+        {/* 全部和自定义按钮 */}
         <div className="flex gap-2 mb-4">
           <button
             onClick={() => setSplitConfig(prev => prev ? {
               ...prev,
               pageMode: 'all',
-              selectedPages: Array.from({length: totalPages}, (_,i) => String(i+1)).join(','),
-              quickModeId: null
+              selectedPages: Array.from({length: totalPages}, (_,i) => String(i+1)).join(',')
             } : null)}
             className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium border-2 transition-all ${
               splitConfig.pageMode === 'all'
@@ -507,8 +522,7 @@ function ToolPage() {
             onClick={() => setSplitConfig(prev => prev ? {
               ...prev,
               pageMode: 'range',
-              selectedPages: '',
-              quickModeId: null
+              selectedPages: ''
             } : null)}
             className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium border-2 transition-all ${
               splitConfig.pageMode === 'range'
@@ -520,14 +534,13 @@ function ToolPage() {
           </button>
         </div>
 
-        {/* 自定义输入区域 - 只在 Page Range 模式显示 */}
+        {/* 自定义选择区域 - 只在 Custom 模式显示 */}
         {splitConfig.pageMode === 'range' && (
           <div className="border-t border-slate-200 pt-4 mt-4">
             <div className="flex items-center justify-between mb-2">
               <label className="text-sm font-medium text-slate-700">
                 Custom Selection
               </label>
-              <span className="text-xs text-violet-600 font-medium">Active</span>
             </div>
             
             {/* 页面网格 */}
@@ -549,18 +562,12 @@ function ToolPage() {
                     onClick={() => {
                       setSplitConfig(prev => {
                         if (!prev) return null
-                        
                         const current = prev.selectedPages.split(',').filter(p => p)
-                        
                         if (isSelected) {
                           return { ...prev, selectedPages: '' }
                         } else {
                           current.push(String(pageNum))
-                          return { 
-                            ...prev, 
-                            selectedPages: current.join(','),
-                            quickModeId: null
-                          }
+                          return { ...prev, selectedPages: current.join(',') }
                         }
                       })
                     }}
@@ -582,8 +589,7 @@ function ToolPage() {
               value={splitConfig.selectedPages}
               onChange={(e) => setSplitConfig(prev => prev ? { 
                 ...prev, 
-                selectedPages: e.target.value,
-                quickModeId: null
+                selectedPages: e.target.value
               } : null)}
               placeholder="e.g., 1,3,5-10"
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
