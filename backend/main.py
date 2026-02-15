@@ -157,6 +157,8 @@ async def split_pdf(
         if not pages or pages.strip() == '':
             raise HTTPException(400, "No pages specified")
         
+        print(f"Split request - Pages param: {pages}, Total PDF pages: {len(reader.pages)}")
+        
         page_numbers = []
         for part in pages.split(','):
             part = part.strip()
@@ -165,18 +167,32 @@ async def split_pdf(
             if '-' in part:
                 try:
                     start, end = map(int, part.split('-'))
+                    if start < 1 or end < 1:
+                        raise HTTPException(400, f"Page numbers must be >= 1: {part}")
+                    if start > end:
+                        raise HTTPException(400, f"Invalid range (start > end): {part}")
                     page_numbers.extend(range(start-1, end))
-                except ValueError:
-                    raise HTTPException(400, f"Invalid page range: {part}")
+                except ValueError as e:
+                    raise HTTPException(400, f"Invalid page range '{part}': {str(e)}")
             else:
                 try:
-                    page_numbers.append(int(part) - 1)
-                except ValueError:
-                    raise HTTPException(400, f"Invalid page number: {part}")
+                    num = int(part)
+                    if num < 1:
+                        raise HTTPException(400, f"Page number must be >= 1: {part}")
+                    page_numbers.append(num - 1)
+                except ValueError as e:
+                    raise HTTPException(400, f"Invalid page number '{part}': {str(e)}")
+        
+        print(f"Parsed page indices: {page_numbers}")
+        
+        if not page_numbers:
+            raise HTTPException(400, "No valid pages to extract")
         
         for page_num in page_numbers:
             if 0 <= page_num < len(reader.pages):
                 writer.add_page(reader.pages[page_num])
+            else:
+                print(f"Warning: Page index {page_num} out of range (0-{len(reader.pages)-1})")
         
         output_path = TEMP_DIR / f"split_{file_id}.pdf"
         with open(output_path, "wb") as f:
