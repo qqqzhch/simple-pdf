@@ -2,9 +2,21 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install Ghostscript
+# Install system dependencies for PyMuPDF and Ghostscript
 RUN apt-get update && \
-    apt-get install -y ghostscript && \
+    apt-get install -y \
+        ghostscript \
+        gcc \
+        g++ \
+        make \
+        libffi-dev \
+        libssl-dev \
+        python3-dev \
+        pkg-config \
+        swig \
+        libxml2-dev \
+        libxslt1-dev \
+        zlib1g-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
