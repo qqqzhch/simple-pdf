@@ -257,12 +257,17 @@ function ToolPage() {
           status: 'ready'
         }])
         
-        // 初始化拆分配置
+        // 初始化拆分配置 - 默认使用分组模式，每2页一组
+        const defaultGroupSize = 2
+        const defaultPages = Array.from({length: Math.ceil(pages/defaultGroupSize)}, (_,i) => 
+          `${i*defaultGroupSize+1}-${Math.min(i*defaultGroupSize+defaultGroupSize, pages)}`
+        ).join(',')
+        
         setSplitConfig({
           fileId: tempId,
           totalPages: pages,
-          selectedPages: '',
-          pageMode: 'range'
+          selectedPages: defaultPages,
+          pageMode: 'group'
         })
       } catch (error) {
         setFiles([{
