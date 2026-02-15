@@ -351,8 +351,16 @@ function ToolPage() {
     }
 
     const file = files[0]
+    console.log('File object:', file)
+    
     if (!file) {
       alert('No file selected')
+      return
+    }
+    
+    if (!file.file) {
+      alert('File data missing')
+      console.error('file.file is undefined', file)
       return
     }
 
@@ -360,7 +368,11 @@ function ToolPage() {
     formData.append('file', file.file)
     formData.append('pages', configToUse.selectedPages)
     
-    console.log('Sending split request with pages:', configToUse.selectedPages)
+    // 检查 FormData 内容
+    console.log('FormData entries:')
+    for (const [key, value] of formData.entries()) {
+      console.log(`  ${key}:`, typeof value === 'string' ? value : `File(${file.file.name})`)
+    }
 
     setFiles(prev => prev.map(f => 
       f.id === file.id ? { ...f, status: 'processing', progress: 40 } : f
