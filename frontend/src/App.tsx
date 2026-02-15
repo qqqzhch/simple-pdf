@@ -263,6 +263,9 @@ function ToolPage() {
           `${i*defaultGroupSize+1}-${Math.min(i*defaultGroupSize+defaultGroupSize, pages)}`
         ).join(',')
         
+        console.log('Initializing split config with pages:', defaultPages)
+        
+        // 设置拆分配置
         setSplitConfig({
           fileId: tempId,
           totalPages: pages,
@@ -329,17 +332,35 @@ function ToolPage() {
   }
 
   const splitPDF = async () => {
-    if (!splitConfig || !splitConfig.selectedPages) {
+    // 获取当前状态
+    const currentConfig = splitConfig
+    
+    console.log('Split PDF called:', { currentConfig, splitConfig, files })
+    
+    // 使用最新的状态
+    const configToUse = currentConfig || splitConfig
+    
+    if (!configToUse) {
+      alert('Please configure page selection')
+      return
+    }
+    
+    if (!configToUse.selectedPages || configToUse.selectedPages.trim() === '') {
       alert('Please select pages to extract')
       return
     }
 
     const file = files[0]
-    if (!file) return
+    if (!file) {
+      alert('No file selected')
+      return
+    }
 
     const formData = new FormData()
     formData.append('file', file.file)
-    formData.append('pages', splitConfig.selectedPages)
+    formData.append('pages', configToUse.selectedPages)
+    
+    console.log('Sending split request with pages:', configToUse.selectedPages)
 
     setFiles(prev => prev.map(f => 
       f.id === file.id ? { ...f, status: 'processing', progress: 40 } : f
