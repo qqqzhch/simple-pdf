@@ -2,32 +2,24 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies for PyMuPDF and Ghostscript
+# Install system dependencies
 RUN apt-get update && \
     apt-get install -y \
         ghostscript \
         gcc \
         g++ \
         make \
-        libffi-dev \
-        libssl-dev \
         python3-dev \
-        pkg-config \
-        swig \
-        libxml2-dev \
-        libxslt1-dev \
-        zlib1g-dev && \
+        pkg-config && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Verify Ghostscript installation
-RUN gs --version
-
-# Install Python dependencies
+# Copy and install Python dependencies
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt || \
+    (echo "Retrying with verbose output..." && pip install --verbose -r requirements.txt)
 
-# Copy application code from backend directory
+# Copy application code
 COPY backend/ .
 
 # Run the application
