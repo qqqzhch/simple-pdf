@@ -642,7 +642,7 @@ function ToolPage() {
               selectedPages: generatePagesFromGroups(prev.groups)
             } : null)}
             className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium border-2 transition-all ${
-              splitConfig.pageMode === 'range' || splitConfig.pageMode === 'group'
+              splitConfig.pageMode === 'range'
                 ? 'border-violet-500 bg-violet-50 text-violet-700'
                 : 'border-slate-200 text-slate-600 hover:border-violet-300'
             }`}
@@ -651,22 +651,23 @@ function ToolPage() {
           </button>
         </div>
 
-        {/* 分组管理区域 */}
-        <div className="border-t border-slate-200 pt-4 mt-4">
-          <div className="flex items-center justify-between mb-3">
-            <label className="text-sm font-medium text-slate-700">
-              Page Groups ({splitConfig.groups.length})
-            </label>
-            <button
-              onClick={addGroup}
-              className="text-sm text-violet-600 hover:text-violet-700 font-medium flex items-center gap-1"
-            >
-              <span>+</span> Add Group
-            </button>
-          </div>
-          
-          {/* 分组列表 */}
-          <div className="space-y-2 max-h-64 overflow-y-auto">
+        {/* 分组管理区域 - 只在 Custom Groups 模式显示 */}
+        {splitConfig.pageMode === 'range' && (
+          <div className="border-t border-slate-200 pt-4 mt-4 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm font-medium text-slate-700">
+                Page Groups ({splitConfig.groups.length})
+              </label>
+              <button
+                onClick={addGroup}
+                className="text-sm text-violet-600 hover:text-violet-700 font-medium flex items-center gap-1"
+              >
+                <span>+</span> Add Group
+              </button>
+            </div>
+            
+            {/* 分组列表 */}
+            <div className="space-y-2 max-h-64 overflow-y-auto">
             {splitConfig.groups.map((group, index) => (
               <div key={group.id} className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl">
                 <span className="text-sm font-medium text-slate-500 w-6">
@@ -718,6 +719,7 @@ function ToolPage() {
             ))}
           </div>
         </div>
+        )}
 
         {/* 当前选择提示 */}
         {splitConfig.selectedPages && (
