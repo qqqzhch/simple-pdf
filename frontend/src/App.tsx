@@ -492,7 +492,7 @@ function ToolPage() {
             onClick={() => setSplitConfig(prev => prev ? {
               ...prev,
               pageMode: 'all',
-              selectedPages: `1-${totalPages}`,
+              selectedPages: Array.from({length: totalPages}, (_,i) => String(i+1)).join(','),
               quickModeId: null
             } : null)}
             className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium border-2 transition-all ${
@@ -516,84 +516,80 @@ function ToolPage() {
                 : 'border-slate-200 text-slate-600 hover:border-violet-300'
             }`}
           >
-            Page Range
+            Custom
           </button>
         </div>
 
-        {/* 自定义输入区域 */}
-        <div className="border-t border-slate-200 pt-4 mt-4">
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-slate-700">
-              Custom Selection
-            </label>
-            {splitConfig.pageMode === 'custom' && (
+        {/* 自定义输入区域 - 只在 Page Range 模式显示 */}
+        {splitConfig.pageMode === 'range' && (
+          <div className="border-t border-slate-200 pt-4 mt-4">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-slate-700">
+                Custom Selection
+              </label>
               <span className="text-xs text-violet-600 font-medium">Active</span>
-            )}
-          </div>
-          
-          {/* 页面网格 */}
-          <div className="grid grid-cols-10 gap-1.5 mb-3 max-h-40 overflow-y-auto p-2 bg-slate-50 rounded-xl">
-            {pages.map((pageNum) => {
-              const isSelected = splitConfig.selectedPages
-                .split(',')
-                .some(p => {
-                  if (p.includes('-')) {
-                    const [start, end] = p.split('-').map(Number)
-                    return pageNum >= start && pageNum <= end
-                  }
-                  return Number(p) === pageNum
-                })
-              
-              return (
-                <button
-                  key={pageNum}
-                  onClick={() => {
-                    // 切换到自定义模式
-                    setSplitConfig(prev => {
-                      if (!prev) return null
-                      
-                      const current = prev.selectedPages.split(',').filter(p => p)
-                      
-                      if (isSelected) {
-                        // 简单移除（实际应该精确移除）
-                        return { ...prev, pageMode: 'custom', selectedPages: '' }
-                      } else {
-                        current.push(String(pageNum))
-                        return { 
-                          ...prev, 
-                          pageMode: 'custom',
-                          selectedPages: current.join(','),
-                          quickModeId: null
+            </div>
+            
+            {/* 页面网格 */}
+            <div className="grid grid-cols-10 gap-1.5 mb-3 max-h-40 overflow-y-auto p-2 bg-slate-50 rounded-xl">
+              {pages.map((pageNum) => {
+                const isSelected = splitConfig.selectedPages
+                  .split(',')
+                  .some(p => {
+                    if (p.includes('-')) {
+                      const [start, end] = p.split('-').map(Number)
+                      return pageNum >= start && pageNum <= end
+                    }
+                    return Number(p) === pageNum
+                  })
+                
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => {
+                      setSplitConfig(prev => {
+                        if (!prev) return null
+                        
+                        const current = prev.selectedPages.split(',').filter(p => p)
+                        
+                        if (isSelected) {
+                          return { ...prev, selectedPages: '' }
+                        } else {
+                          current.push(String(pageNum))
+                          return { 
+                            ...prev, 
+                            selectedPages: current.join(','),
+                            quickModeId: null
+                          }
                         }
-                      }
-                    })
-                  }}
-                  className={`w-8 h-8 rounded-md text-xs font-medium transition-all ${
-                    isSelected
-                      ? 'bg-violet-500 text-white'
-                      : 'bg-white border border-slate-200 text-slate-600 hover:border-violet-300'
-                  }`}
-                >
-                  {pageNum}
-                </button>
-              )
-            })}
-          </div>
+                      })
+                    }}
+                    className={`w-8 h-8 rounded-md text-xs font-medium transition-all ${
+                      isSelected
+                        ? 'bg-violet-500 text-white'
+                        : 'bg-white border border-slate-200 text-slate-600 hover:border-violet-300'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                )
+              })}
+            </div>
 
-          {/* 自定义输入框 */}
-          <input
-            type="text"
-            value={splitConfig.selectedPages}
-            onChange={(e) => setSplitConfig(prev => prev ? { 
-              ...prev, 
-              pageMode: 'custom',
-              selectedPages: e.target.value,
-              quickModeId: null
-            } : null)}
-            placeholder="e.g., 1,3,5-10"
-            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
-          />
-        </div>
+            {/* 自定义输入框 */}
+            <input
+              type="text"
+              value={splitConfig.selectedPages}
+              onChange={(e) => setSplitConfig(prev => prev ? { 
+                ...prev, 
+                selectedPages: e.target.value,
+                quickModeId: null
+              } : null)}
+              placeholder="e.g., 1,3,5-10"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500"
+            />
+          </div>
+        )}
 
         {/* 当前选择提示 */}
         {splitConfig.selectedPages && (
