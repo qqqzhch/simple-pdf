@@ -154,13 +154,25 @@ async def split_pdf(
         writer = PdfWriter()
         
         # 解析页码
+        if not pages or pages.strip() == '':
+            raise HTTPException(400, "No pages specified")
+        
         page_numbers = []
         for part in pages.split(','):
+            part = part.strip()
+            if not part:
+                continue
             if '-' in part:
-                start, end = map(int, part.split('-'))
-                page_numbers.extend(range(start-1, end))
+                try:
+                    start, end = map(int, part.split('-'))
+                    page_numbers.extend(range(start-1, end))
+                except ValueError:
+                    raise HTTPException(400, f"Invalid page range: {part}")
             else:
-                page_numbers.append(int(part) - 1)
+                try:
+                    page_numbers.append(int(part) - 1)
+                except ValueError:
+                    raise HTTPException(400, f"Invalid page number: {part}")
         
         for page_num in page_numbers:
             if 0 <= page_num < len(reader.pages):

@@ -469,7 +469,7 @@ function ToolPage() {
             }`}
           >
             <div className="font-medium text-sm text-slate-900">Extract pages in groups</div>
-            <div className="text-xs text-slate-500 mt-1">Split every N pages</div>
+            <div className="text-xs text-slate-500 mt-1">Split into groups of N pages</div>
           </button>
           
           <div className="w-20">
@@ -516,7 +516,7 @@ function ToolPage() {
                 : 'border-slate-200 text-slate-600 hover:border-violet-300'
             }`}
           >
-            All Pages
+            Every Page
           </button>
           <button
             onClick={() => setSplitConfig(prev => prev ? {
