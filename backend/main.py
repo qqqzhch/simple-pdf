@@ -8,6 +8,10 @@ from pathlib import Path
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import io
+import subprocess
+
+# PyPDF2 imports
+from PyPDF2 import PdfReader, PdfWriter
 
 app = FastAPI(title="SimplePDF API", version="1.0.0")
 
@@ -265,16 +269,72 @@ async def split_pdf(
             shutil.rmtree(output_dir)
         raise HTTPException(500, f"Split failed: {str(e)}")
 
+def compress_with_ghostscript(input_path: str, output_path: str, level: str) -> bool:
+    """使用 Ghostscript 压缩 PDF，返回是否成功"""
+    import shutil
+    
+    # 检查 Ghostscript 是否可用
+    if not shutil.which("gs"):
+        return False
+    
+    quality_settings = {
+        "low": "/printer",
+        "medium": "/ebook",
+        "high": "/screen"
+    }
+    
+    pdf_settings = quality_settings.get(level, "/ebook")
+    
+    cmd = [
+        "gs",
+        "-sDEVICE=pdfwrite",
+        "-dCompatibilityLevel=1.4",
+        f"-dPDFSETTINGS={pdf_settings}",
+        "-dNOPAUSE",
+        "-dQUIET",
+        "-dBATCH",
+        "-dColorImageDownsampleType=/Bicubic",
+        "-dGrayImageDownsampleType=/Bicubic",
+        "-dMonoImageDownsampleType=/Bicubic",
+        f"-sOutputFile={output_path}",
+        input_path
+    ]
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        return result.returncode == 0 and os.path.exists(output_path)
+    except Exception as e:
+        print(f"Ghostscript error: {e}")
+        return False
+
+def compress_with_pypdf2(input_path: str, output_path: str) -> bool:
+    """使用 PyPDF2 作为回退压缩方案"""
+    try:
+        reader = PdfReader(input_path)
+        writer = PdfWriter()
+        
+        for page in reader.pages:
+            writer.add_page(page)
+        
+        # 移除部分元数据以减少大小
+        writer.add_metadata({"/Producer": "SimplePDF"})
+        
+        with open(output_path, "wb") as f:
+            writer.write(f)
+        
+        return True
+    except Exception as e:
+        print(f"PyPDF2 compression error: {e}")
+        return False
+
 @app.post("/api/compress")
 async def compress_pdf(
     file: UploadFile = File(...),
     level: str = Form("medium")  # low, medium, high
 ):
-    """压缩PDF文件"""
+    """压缩PDF文件 - 优先使用 Ghostscript，回退到 PyPDF2"""
     if not file.filename.endswith('.pdf'):
         raise HTTPException(400, "Only PDF files allowed")
-    
-    from PyPDF2 import PdfReader, PdfWriter
     
     file_id = str(uuid.uuid4())
     input_path = TEMP_DIR / f"{file_id}.pdf"
@@ -287,32 +347,21 @@ async def compress_pdf(
         with open(input_path, "wb") as f:
             f.write(content)
         
-        reader = PdfReader(str(input_path))
-        writer = PdfWriter()
+        # 优先尝试 Ghostscript
+        gs_success = compress_with_ghostscript(str(input_path), str(output_path), level)
         
-        # 复制所有页面
-        for page in reader.pages:
-            writer.add_page(page)
-        
-        # 根据压缩级别设置参数
-        if level == "high":
-            # 高压缩：移除更多元数据，降低图片质量
-            writer.add_metadata({"/Producer": "SimplePDF"})
-        elif level == "medium":
-            writer.add_metadata({"/Producer": "SimplePDF"})
-        else:  # low
-            # 保留更多元数据
-            if reader.metadata:
-                writer.add_metadata(reader.metadata)
-        
-        # 写入压缩后的文件
-        with open(output_path, "wb") as f:
-            writer.write(f)
+        if not gs_success:
+            print("Ghostscript not available or failed, falling back to PyPDF2")
+            pypdf_success = compress_with_pypdf2(str(input_path), str(output_path))
+            
+            if not pypdf_success:
+                raise HTTPException(500, "Compression failed: both Ghostscript and PyPDF2 failed")
         
         compressed_size = output_path.stat().st_size
         compression_ratio = (1 - compressed_size / original_size) * 100
         
-        print(f"Compression: {original_size} -> {compressed_size} ({compression_ratio:.1f}% reduction)")
+        method = "Ghostscript" if gs_success else "PyPDF2"
+        print(f"{method} compression: {original_size} -> {compressed_size} ({compression_ratio:.1f}% reduction)")
         
         # 清理临时文件
         asyncio.create_task(cleanup_file(input_path))
