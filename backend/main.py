@@ -443,10 +443,10 @@ async def convert_pdf_to_image(
         raise HTTPException(400, "DPI must be between 72 and 300")
     
     try:
-        import fitz  # PyMuPDF
+        from pdf2image import convert_from_path
         import zipfile
         from PIL import Image
-        print(f"PyMuPDF version: {fitz.__doc__[:50]}")
+        print("pdf2image imported successfully")
     except ImportError as e:
         print(f"Import error: {e}")
         raise HTTPException(500, f"Missing dependency: {e}")
@@ -463,49 +463,28 @@ async def convert_pdf_to_image(
         with open(input_path, "wb") as f:
             f.write(content)
         
-        # 打开 PDF
-        print(f"Opening PDF: {input_path}")
-        pdf = fitz.open(str(input_path))
-        print(f"PDF pages: {len(pdf)}")
+        # 转换 PDF 为图片
+        print(f"Converting PDF: {input_path}")
+        ext = "png" if format == "png" else "jpeg"
         
-        image_files = []
+        images = convert_from_path(
+            str(input_path),
+            dpi=dpi,
+            fmt=ext,
+            output_folder=str(output_dir),
+            paths_only=True
+        )
         
-        # 转换每一页
-        for page_num in range(len(pdf)):
-            print(f"Processing page {page_num + 1}")
-            page = pdf[page_num]
-            
-            # 设置缩放矩阵
-            mat = fitz.Matrix(dpi/72, dpi/72)
-            pix = page.get_pixmap(matrix=mat)
-            print(f"  Pixmap: {pix.width}x{pix.height}, n={pix.n}")
-            
-            # 保存图片
-            ext = "png" if format == "png" else "jpg"
-            image_path = output_dir / f"page_{page_num + 1}.{ext}"
-            
-            if format == "png":
-                pix.save(str(image_path))
-            else:
-                # JPG: 需要转换为 RGB
-                try:
-                    if pix.n > 3:  # RGBA
-                        img = Image.frombytes("RGBA", [pix.width, pix.height], pix.samples)
-                        background = Image.new("RGB", (pix.width, pix.height), (255, 255, 255))
-                        background.paste(img, mask=img.split()[3])
-                        img = background
-                    else:  # RGB
-                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                    img.save(str(image_path), "JPEG", quality=85, optimize=True)
-                except Exception as img_error:
-                    print(f"  Image processing error: {img_error}")
-                    raise
-            
-            image_files.append(image_path)
-            print(f"  Saved: {image_path}")
+        print(f"Converted {len(images)} pages")
         
-        pdf.close()
-        print(f"Total images: {len(image_files)}")
+        image_files = [Path(img_path) for img_path in images]
+        
+        # 重命名文件
+        for i, img_path in enumerate(image_files):
+            new_name = output_dir / f"page_{i + 1}.{format}"
+            img_path.rename(new_name)
+            image_files[i] = new_name
+            print(f"  Renamed to: {new_name}")
         
         if not image_files:
             raise HTTPException(400, "No pages could be converted")
