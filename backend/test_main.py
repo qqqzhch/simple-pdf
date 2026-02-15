@@ -252,6 +252,106 @@ def test_compress_invalid_file():
     assert response.status_code == 400
     assert "Only PDF files" in response.json()["detail"]
 
+# ==================== Image Conversion Tests ====================
+
+def test_pdf_to_image_success():
+    """Test converting PDF to images"""
+    pdf_bytes = create_test_pdf(3)
+    
+    response = client.post(
+        "/api/convert/pdf-to-image",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        data={"format": "jpg", "dpi": 150}
+    )
+    
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert "X-Total-Pages" in response.headers
+    assert response.headers["X-Total-Pages"] == "3"
+
+def test_pdf_to_image_png_format():
+    """Test converting PDF to PNG images"""
+    pdf_bytes = create_test_pdf(2)
+    
+    response = client.post(
+        "/api/convert/pdf-to-image",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        data={"format": "png", "dpi": 100}
+    )
+    
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["X-Image-Format"] == "png"
+
+def test_pdf_to_image_invalid_format():
+    """Test PDF to image with invalid format"""
+    pdf_bytes = create_test_pdf(1)
+    
+    response = client.post(
+        "/api/convert/pdf-to-image",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        data={"format": "gif", "dpi": 150}
+    )
+    
+    assert response.status_code == 400
+    assert "jpg or png" in response.json()["detail"]
+
+def create_test_image(format: str = "png") -> bytes:
+    """Create a simple test image"""
+    from PIL import Image
+    import io
+    
+    img = Image.new('RGB', (100, 100), color='red')
+    output = io.BytesIO()
+    # Fix format name for PIL
+    pil_format = "JPEG" if format.lower() in ["jpg", "jpeg"] else format.upper()
+    img.save(output, format=pil_format)
+    output.seek(0)
+    return output.read()
+
+def test_image_to_pdf_success():
+    """Test converting images to PDF"""
+    img_bytes = create_test_image("png")
+    
+    response = client.post(
+        "/api/convert/image-to-pdf",
+        files=[("files", ("test.png", img_bytes, "image/png"))],
+        data={"page_size": "A4"}
+    )
+    
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["X-Total-Images"] == "1"
+
+def test_image_to_pdf_multiple():
+    """Test converting multiple images to PDF"""
+    img1 = create_test_image("png")
+    img2 = create_test_image("jpg")
+    
+    response = client.post(
+        "/api/convert/image-to-pdf",
+        files=[
+            ("files", ("test1.png", img1, "image/png")),
+            ("files", ("test2.jpg", img2, "image/jpeg"))
+        ],
+        data={"page_size": "original"}
+    )
+    
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["X-Total-Images"] == "2"
+
+def test_image_to_pdf_invalid_file():
+    """Test converting non-image file"""
+    response = client.post(
+        "/api/convert/image-to-pdf",
+        files=[("files", ("test.txt", b"not an image", "text/plain"))],
+        data={"page_size": "A4"}
+    )
+    
+    assert response.status_code == 400
+    assert "Only images" in response.json()["detail"]
+
 # ==================== Edge Cases ====================
 
 @pytest.mark.skip(reason="Large file test causes memory issues in test environment")

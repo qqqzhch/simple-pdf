@@ -4,6 +4,8 @@ python-multipart==0.0.6
 pdf2docx==0.5.9
 pypdf2==3.0.1
 pillow==10.2.0
+pymupdf==1.23.26
+img2pdf==0.5.1
 redis==5.0.1
 celery==5.3.6
 python-magic==0.4.27

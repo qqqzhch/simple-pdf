@@ -424,6 +424,197 @@ async def get_pdf_info(file: UploadFile = File(...)):
             input_path.unlink()
         raise HTTPException(500, f"Failed to read PDF: {str(e)}")
 
+@app.post("/api/convert/pdf-to-image")
+async def convert_pdf_to_image(
+    file: UploadFile = File(...),
+    format: str = Form("jpg"),  # jpg, png
+    dpi: int = Form(150)  # 分辨率
+):
+    """将 PDF 转换为图片（每页一张）"""
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(400, "Only PDF files allowed")
+    
+    if format not in ["jpg", "jpeg", "png"]:
+        raise HTTPException(400, "Format must be jpg or png")
+    
+    if dpi < 72 or dpi > 300:
+        raise HTTPException(400, "DPI must be between 72 and 300")
+    
+    import fitz  # PyMuPDF
+    import zipfile
+    from PIL import Image
+    
+    file_id = str(uuid.uuid4())
+    input_path = TEMP_DIR / f"{file_id}.pdf"
+    output_dir = TEMP_DIR / f"images_{file_id}"
+    output_dir.mkdir(exist_ok=True)
+    
+    try:
+        content = await file.read()
+        
+        with open(input_path, "wb") as f:
+            f.write(content)
+        
+        # 打开 PDF
+        pdf = fitz.open(str(input_path))
+        image_files = []
+        
+        # 转换每一页
+        for page_num in range(len(pdf)):
+            page = pdf[page_num]
+            
+            # 设置缩放矩阵
+            mat = fitz.Matrix(dpi/72, dpi/72)  # 72 是 PDF 默认 DPI
+            pix = page.get_pixmap(matrix=mat)
+            
+            # 保存图片
+            ext = "png" if format == "png" else "jpg"
+            image_path = output_dir / f"page_{page_num + 1}.{ext}"
+            
+            if format == "png":
+                pix.save(str(image_path))
+            else:
+                # 转换为 JPG 并压缩
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                img.save(str(image_path), "JPEG", quality=85, optimize=True)
+            
+            image_files.append(image_path)
+            print(f"Converted page {page_num + 1} to {image_path}")
+        
+        pdf.close()
+        
+        if not image_files:
+            raise HTTPException(400, "No pages could be converted")
+        
+        # 打包成 ZIP
+        zip_path = TEMP_DIR / f"images_{file_id}.zip"
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for img_file in image_files:
+                zipf.write(img_file, img_file.name)
+        
+        print(f"Created ZIP: {zip_path} with {len(image_files)} images")
+        
+        # 清理临时文件
+        asyncio.create_task(cleanup_file(input_path))
+        for img_file in image_files:
+            asyncio.create_task(cleanup_file(img_file))
+        asyncio.create_task(cleanup_file(zip_path))
+        
+        # 清理目录
+        import shutil
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
+        
+        return FileResponse(
+            path=zip_path,
+            filename=f"{file.filename.replace('.pdf', '')}_images.zip",
+            media_type='application/zip',
+            headers={
+                "X-Total-Pages": str(len(image_files)),
+                "X-Image-Format": format,
+                "X-DPI": str(dpi)
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # 清理临时文件
+        if input_path.exists():
+            input_path.unlink()
+        if output_dir.exists():
+            import shutil
+            shutil.rmtree(output_dir)
+        raise HTTPException(500, f"Conversion failed: {str(e)}")
+
+@app.post("/api/convert/image-to-pdf")
+async def convert_image_to_pdf(
+    files: list[UploadFile] = File(...),
+    page_size: str = Form("A4")  # A4, Letter, original
+):
+    """将图片转换为 PDF（支持多张图片合并）"""
+    if not files:
+        raise HTTPException(400, "No files uploaded")
+    
+    if len(files) > 20:
+        raise HTTPException(400, "Max 20 images allowed")
+    
+    valid_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.gif', '.webp'}
+    
+    for file in files:
+        ext = Path(file.filename).suffix.lower()
+        if ext not in valid_extensions:
+            raise HTTPException(400, f"Invalid file type: {file.filename}. Only images allowed.")
+    
+    from PIL import Image
+    
+    file_id = str(uuid.uuid4())
+    output_path = TEMP_DIR / f"images_{file_id}.pdf"
+    images = []
+    
+    try:
+        # 读取并转换所有图片
+        for i, file in enumerate(files):
+            content = await file.read()
+            img = Image.open(io.BytesIO(content))
+            
+            # 转换为 RGB（PDF 不支持 RGBA）
+            if img.mode == 'RGBA':
+                # 创建白色背景
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[3])  # 使用 alpha 通道作为 mask
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            images.append(img)
+            print(f"Processed image {i+1}: {file.filename}, mode: {img.mode}, size: {img.size}")
+        
+        if not images:
+            raise HTTPException(400, "No valid images to convert")
+        
+        # 保存为 PDF
+        first_image = images[0]
+        remaining_images = images[1:] if len(images) > 1 else []
+        
+        first_image.save(
+            output_path,
+            "PDF",
+            resolution=100.0,
+            save_all=True,
+            append_images=remaining_images
+        )
+        
+        print(f"Created PDF: {output_path} with {len(images)} pages")
+        
+        # 清理临时文件
+        for img in images:
+            img.close()
+        asyncio.create_task(cleanup_file(output_path))
+        
+        return FileResponse(
+            path=output_path,
+            filename=f"converted_images.pdf",
+            media_type='application/pdf',
+            headers={
+                "X-Total-Images": str(len(images)),
+                "X-Page-Size": page_size
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # 清理资源
+        for img in images:
+            try:
+                img.close()
+            except:
+                pass
+        if output_path.exists():
+            output_path.unlink()
+        raise HTTPException(500, f"Conversion failed: {str(e)}")
+
 @app.get("/api/health")
 async def health_check():
     """健康检查"""
