@@ -1,9 +1,9 @@
 import { useState, useCallback } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useDropzone } from 'react-dropzone'
 import { filesize } from 'filesize'
 import { 
-  Upload, FileText, Download, X, Check, 
+  Upload, FileText, Download, X, Check,
   FileUp, Combine, Scissors, ArrowLeft, Shield, Clock
 } from 'lucide-react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
@@ -68,12 +68,11 @@ const tools: ToolConfig[] = [
 ]
 
 // ============================================
-// HOME PAGE - 工具选择
+// HOME PAGE
 // ============================================
 function HomePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      {/* Hero Section */}
       <section className="pt-16 pb-12">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 text-center">
           <motion.div 
@@ -124,7 +123,6 @@ function HomePage() {
         </div>
       </section>
 
-      {/* Tools Grid */}
       <section className="pb-20">
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <motion.div 
@@ -153,9 +151,9 @@ function HomePage() {
                     {tool.description}
                   </p>
 
-                  <div className="flex items-center text-blue-600 font-medium text-sm group-hover:gap-2 transition-all">
+                  <div className="flex items-center text-blue-600 font-medium text-sm">
                     <span>Use Tool</span>
-                    <ArrowLeft className="w-4 h-4 rotate-180 opacity-0 group-hover:opacity-100 transition-all" />
+                    <ArrowLeft className="w-4 h-4 rotate-180 ml-1 opacity-0 group-hover:opacity-100 transition-all" />
                   </div>
                 </Link>
               )
@@ -168,7 +166,7 @@ function HomePage() {
 }
 
 // ============================================
-// TOOL PAGE - 工具详情页
+// TOOL PAGE - 优化版：上传区域变文件卡片
 // ============================================
 function ToolPage() {
   const { toolId } = useParams<{ toolId: ToolType }>()
@@ -183,6 +181,7 @@ function ToolPage() {
   }
 
   const Icon = tool.icon
+  const hasFiles = files.length > 0
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const pdfFiles = acceptedFiles.filter(file => file.type === 'application/pdf')
@@ -192,7 +191,8 @@ function ToolPage() {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { 'application/pdf': ['.pdf'] },
-    multiple: tool.id === 'merge'
+    multiple: tool.id === 'merge',
+    noClick: hasFiles && tool.id !== 'merge'
   })
 
   const addFiles = (newFiles: File[]) => {
@@ -344,34 +344,32 @@ function ToolPage() {
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-50">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={() => navigate('/')}
-              className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-              <span className="font-medium">Back to Tools</span>
-            </button>
-          </div>
+          <button 
+            onClick={() => navigate('/')}
+            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="font-medium">Back to Tools</span>
+          </button>
         </div>
       </header>
 
       {/* Tool Hero */}
-      <section className="pt-12 pb-8">
+      <section className="pt-10 pb-6">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className={`w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br ${tool.color} flex items-center justify-center mb-6 shadow-xl`}
+            className={`w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br ${tool.color} flex items-center justify-center mb-4 shadow-xl`}
           >
-            <Icon className="w-10 h-10 text-white" />
+            <Icon className="w-8 h-8 text-white" />
           </motion.div>
 
           <motion.h1 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="text-4xl font-bold text-slate-900 mb-4"
+            className="text-3xl font-bold text-slate-900 mb-2"
           >
             {tool.label}
           </motion.h1>
@@ -380,7 +378,7 @@ function ToolPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.2 }}
-            className="text-lg text-slate-600"
+            className="text-slate-600"
           >
             {tool.longDescription}
           </motion.p>
@@ -388,13 +386,13 @@ function ToolPage() {
       </section>
 
       {/* Main Content */}
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 pb-20">
+      <main className="max-w-2xl mx-auto px-4 sm:px-6 pb-20">
         {/* Split Pages Input */}
         {tool.id === 'split' && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-6"
+            className="mb-4"
           >
             <label className="block text-sm font-semibold text-slate-700 mb-2">
               Pages to Extract (e.g., 1,3,5-10)
@@ -404,74 +402,68 @@ function ToolPage() {
               value={splitPages}
               onChange={(e) => setSplitPages(e.target.value)}
               placeholder="Enter page numbers or ranges"
-              className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </motion.div>
         )}
 
-        {/* Upload Area */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-        >
-          <div
-            {...getRootProps()}
-            className={`relative group cursor-pointer rounded-3xl border-2 border-dashed transition-all duration-300 bg-white ${
-              isDragActive
-                ? `border-blue-500 bg-blue-50 scale-[1.02]`
-                : 'border-slate-300 hover:border-blue-400'
-            }`}
-            style={{ minHeight: '360px' }}
-          >
-            <input {...getInputProps()} />
-            
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-8">
-              <motion.div 
-                animate={isDragActive ? { scale: 1.1, y: -8 } : { scale: 1, y: 0 }}
-                className={`w-24 h-24 rounded-2xl bg-gradient-to-br ${tool.color} flex items-center justify-center mb-6 shadow-xl`}
+        {/* 
+          优化方案：上传区域和文件卡片在同一位置
+          没有文件时显示上传区，有文件时显示卡片
+        */}
+        <AnimatePresence mode="wait">
+          {!hasFiles ? (
+            <motion.div
+              key="upload"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div
+                {...getRootProps()}
+                className={`relative group cursor-pointer rounded-2xl border-2 border-dashed transition-all duration-300 bg-white ${
+                  isDragActive
+                    ? `border-blue-500 bg-blue-50 scale-[1.02]`
+                    : 'border-slate-300 hover:border-blue-400'
+                }`}
+                style={{ minHeight: '280px' }}
               >
-                <Upload className="w-12 h-12 text-white" />
-              </motion.div>
-              
-              <h3 className="text-2xl font-bold text-slate-900 mb-3">
-                Select PDF file
-              </h3>
-              
-              <p className="text-slate-500 text-center mb-2">
-                or drag and drop your PDF here
-              </p>
-              
-              <div className="flex items-center gap-2 text-sm text-slate-400 mt-4">
-                <FileText className="w-4 h-4" />
-                <span>Max 50MB • {tool.acceptedFiles === 1 ? '1 file' : 'Up to ' + tool.acceptedFiles + ' files'}</span>
+                <input {...getInputProps()} />
+                
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-8">
+                  <motion.div 
+                    animate={isDragActive ? { scale: 1.1, y: -8 } : { scale: 1, y: 0 }}
+                    className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${tool.color} flex items-center justify-center mb-5 shadow-xl`}
+                  >
+                    <Upload className="w-10 h-10 text-white" />
+                  </motion.div>
+                  
+                  <h3 className="text-xl font-bold text-slate-900 mb-2">
+                    Select PDF file
+                  </h3>
+                  
+                  <p className="text-slate-500 text-center mb-2">
+                    or drag and drop your PDF here
+                  </p>
+                  
+                  <div className="flex items-center gap-2 text-sm text-slate-400 mt-3">
+                    <FileText className="w-4 h-4" />
+                    <span>Max 50MB • {tool.acceptedFiles === 1 ? '1 file' : 'Up to ' + tool.acceptedFiles + ' files'}</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* File List */}
-        {files.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-8 space-y-4"
-          >
-            {/* Merge Button */}
-            {tool.id === 'merge' && files.length >= 2 && (
-              <div className="text-center mb-6">
-                <button
-                  onClick={mergeAllPDFs}
-                  className={`px-8 py-4 bg-gradient-to-r ${tool.color} text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl hover:scale-105 transition-all`}
-                >
-                  <Combine className="w-5 h-5 inline mr-2" />
-                  Merge {files.length} PDFs
-                </button>
-              </div>
-            )}
-
-            {/* File Cards */}
-            <div className="space-y-3">
+            </motion.div>
+          ) : (
+            <motion.div
+              key="files"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-3"
+            >
+              {/* 文件卡片列表 - 直接显示在上传区域位置 */}
               {files.map((file) => (
                 <FileCard
                   key={file.id}
@@ -481,15 +473,64 @@ function ToolPage() {
                   onDownload={() => downloadFile(file.resultUrl!, file.name.replace('.pdf', tool.outputExt))}
                 />
               ))}
-            </div>
-          </motion.div>
-        )}
+
+              {/* Merge 按钮（仅 Merge 工具且有多文件时） */}
+              {tool.id === 'merge' && files.length >= 2 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="pt-4"
+                >
+                  <button
+                    onClick={mergeAllPDFs}
+                    disabled={files.some(f => f.status === 'processing')}
+                    className={`w-full py-4 bg-gradient-to-r ${tool.color} text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    <Combine className="w-5 h-5 inline mr-2" />
+                    Merge {files.length} PDFs into one
+                  </button>
+                </motion.div>
+              )}
+
+              {/* 添加更多文件按钮（仅 Merge 工具） */}
+              {tool.id === 'merge' && files.length < tool.acceptedFiles && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="pt-2"
+                >
+                  <div
+                    {...getRootProps()}
+                    className="relative cursor-pointer rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-400 bg-white p-4 text-center transition-all"
+                  >
+                    <input {...getInputProps()} />
+                    <span className="text-slate-500 font-medium">+ Add more PDFs</span>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* 重新开始按钮 */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="pt-4 text-center"
+              >
+                <button
+                  onClick={() => setFiles([])}
+                  className="text-slate-500 hover:text-slate-700 font-medium text-sm"
+                >
+                  Start over
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   )
 }
 
-// File Card Component
+// 文件卡片组件 - 优化进度条显示
 function FileCard({ file, tool, onRemove, onDownload }: { 
   file: PDFFile
   tool: ToolConfig
@@ -502,64 +543,81 @@ function FileCard({ file, tool, onRemove, onDownload }: {
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm"
+      layout
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="bg-white rounded-2xl border-2 border-slate-200 p-5 shadow-sm"
     >
-      <div className="flex items-center gap-4">
+      <div className="flex items-start gap-4">
+        {/* 图标 */}
         <div className="relative shrink-0">
           <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${tool.color} flex items-center justify-center`}>
             <FileText className="w-6 h-6 text-white" />
           </div>
           {isDone && (
-            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center">
+            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-white">
               <Check className="w-3 h-3 text-white" />
             </div>
           )}
         </div>
         
+        {/* 文件信息 */}
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-slate-900 truncate">{file.name}</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="font-semibold text-slate-900 truncate pr-4">{file.name}</p>
+            <button
+              onClick={onRemove}
+              className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          
           <p className="text-sm text-slate-500">{filesize(file.size)}</p>
           
+          {/* 进度条 - 更明显的样式 */}
           {isProcessing && (
-            <div className="mt-2">
-              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-medium text-blue-600">
+                  {file.status === 'uploading' ? 'Uploading...' : 'Converting...'}
+                </span>
+                <span className="text-xs font-bold text-blue-600">{Math.round(file.progress)}%</span>
+              </div>
+              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
                 <motion.div 
                   className={`h-full rounded-full bg-gradient-to-r ${tool.color}`}
                   initial={{ width: 0 }}
                   animate={{ width: `${file.progress}%` }}
+                  transition={{ duration: 0.3 }}
                 />
-              </div>
-              <div className="flex justify-between mt-1">
-                <span className="text-xs text-slate-500">
-                  {file.status === 'uploading' ? 'Uploading...' : 'Processing...'}
-                </span>
-                <span className="text-xs font-medium text-slate-700">{Math.round(file.progress)}%</span>
               </div>
             </div>
           )}
           
-          {isError && <p className="text-sm text-red-600 mt-1">{file.error}</p>}
-          {isDone && <p className="text-sm text-emerald-600 mt-1">Ready for download</p>}
-        </div>
-        
-        <div className="flex items-center gap-2">
-          {isDone && (
-            <button
-              onClick={onDownload}
-              className={`px-4 py-2 bg-gradient-to-r ${tool.color} text-white text-sm font-medium rounded-xl`}
-            >
-              <Download className="w-4 h-4 inline mr-1" />
-              Download
-            </button>
+          {/* 状态提示 */}
+          {isError && (
+            <div className="mt-2 flex items-center gap-1.5 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">
+              <X className="w-4 h-4" />
+              <span>{file.error || 'Conversion failed'}</span>
+            </div>
           )}
-          <button
-            onClick={onRemove}
-            className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          
+          {isDone && (
+            <div className="mt-3 flex items-center gap-3">
+              <div className="flex-1 flex items-center gap-1.5 text-sm text-emerald-600 bg-emerald-50 px-3 py-2 rounded-lg">
+                <Check className="w-4 h-4" />
+                <span>Ready for download</span>
+              </div>
+              <button
+                onClick={onDownload}
+                className={`px-4 py-2 bg-gradient-to-r ${tool.color} text-white text-sm font-semibold rounded-lg hover:shadow-lg transition-all flex items-center gap-1.5`}
+              >
+                <Download className="w-4 h-4" />
+                Download
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </motion.div>
