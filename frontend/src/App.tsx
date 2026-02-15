@@ -15,7 +15,8 @@ interface PDFFile {
   file: File
   name: string
   size: number
-  status: 'uploading' | 'processing' | 'done' | 'error'
+  totalPages: number
+  status: 'uploading' | 'analyzing' | 'ready' | 'processing' | 'done' | 'error'
   progress: number
   error?: string
   resultUrl?: string
@@ -166,7 +167,7 @@ function HomePage() {
 }
 
 // ============================================
-// TOOL PAGE - 优化版：上传区域变文件卡片
+// TOOL PAGE
 // ============================================
 function ToolPage() {
   const { toolId } = useParams<{ toolId: ToolType }>()
@@ -174,7 +175,13 @@ function ToolPage() {
   const tool = tools.find(t => t.id === toolId)
   
   const [files, setFiles] = useState<PDFFile[]>([])
-  const [splitPages, setSplitPages] = useState('')
+  // Split PDF 专用状态
+  const [splitConfig, setSplitConfig] = useState<{
+    fileId: string
+    totalPages: number
+    selectedPages: string
+    pageMode: 'custom' | 'all' | 'range'
+  } | null>(null)
 
   if (!tool) {
     return <div>Tool not found</div>
@@ -195,7 +202,23 @@ function ToolPage() {
     noClick: hasFiles && tool.id !== 'merge'
   })
 
-  const addFiles = (newFiles: File[]) => {
+  // 获取 PDF 信息（页数等）- Split PDF 专用
+  const getPDFInfo = async (file: File): Promise<{ pages: number }> => {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const response = await fetch(`${API_URL}/api/pdf-info`, {
+      method: 'POST',
+      body: formData
+    })
+
+    if (!response.ok) throw new Error('Failed to get PDF info')
+    
+    const data = await response.json()
+    return { pages: data.pages }
+  }
+
+  const addFiles = async (newFiles: File[]) => {
     const remainingSlots = tool.acceptedFiles - files.length
     
     if (remainingSlots <= 0) {
@@ -205,35 +228,67 @@ function ToolPage() {
     
     const filesToAdd = newFiles.slice(0, remainingSlots)
     
+    // Split PDF：先获取页数信息
+    if (tool.id === 'split' && filesToAdd.length > 0) {
+      const file = filesToAdd[0]
+      const tempId = Math.random().toString(36).substring(7)
+      
+      // 添加文件（分析中状态）
+      const pdfFile: PDFFile = {
+        id: tempId,
+        file,
+        name: file.name,
+        size: file.size,
+        totalPages: 0,
+        status: 'analyzing',
+        progress: 0
+      }
+      
+      setFiles([pdfFile])
+      
+      try {
+        // 获取 PDF 页数
+        const { pages } = await getPDFInfo(file)
+        
+        // 更新文件状态
+        setFiles([{
+          ...pdfFile,
+          totalPages: pages,
+          status: 'ready'
+        }])
+        
+        // 初始化拆分配置
+        setSplitConfig({
+          fileId: tempId,
+          totalPages: pages,
+          selectedPages: '',
+          pageMode: 'custom'
+        })
+      } catch (error) {
+        setFiles([{
+          ...pdfFile,
+          status: 'error',
+          error: 'Failed to analyze PDF'
+        }])
+      }
+      return
+    }
+    
+    // Convert 和 Merge：直接处理
     const pdfFiles: PDFFile[] = filesToAdd.map(file => ({
       id: Math.random().toString(36).substring(7),
       file,
       name: file.name,
       size: file.size,
+      totalPages: 0,
       status: 'uploading',
       progress: 0
     }))
     
     setFiles(prev => [...prev, ...pdfFiles])
     
-    if (tool.id !== 'merge') {
-      pdfFiles.forEach(processFile)
-    }
-  }
-
-  const processFile = async (pdfFile: PDFFile) => {
-    try {
-      if (tool.id === 'convert') {
-        await convertPDF(pdfFile)
-      } else if (tool.id === 'split') {
-        await splitPDF(pdfFile)
-      }
-    } catch (error) {
-      setFiles(prev => prev.map(f => 
-        f.id === pdfFile.id 
-          ? { ...f, status: 'error', error: error instanceof Error ? error.message : 'Failed' }
-          : f
-      ))
+    if (tool.id === 'convert') {
+      pdfFiles.forEach(convertPDF)
     }
   }
 
@@ -245,45 +300,67 @@ function ToolPage() {
       f.id === pdfFile.id ? { ...f, status: 'processing', progress: 30 } : f
     ))
 
-    const response = await fetch(`${API_URL}/api/convert/pdf-to-word`, {
-      method: 'POST',
-      body: formData
-    })
+    try {
+      const response = await fetch(`${API_URL}/api/convert/pdf-to-word`, {
+        method: 'POST',
+        body: formData
+      })
 
-    if (!response.ok) throw new Error('Conversion failed')
+      if (!response.ok) throw new Error('Conversion failed')
 
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
 
-    setFiles(prev => prev.map(f => 
-      f.id === pdfFile.id ? { ...f, status: 'done', progress: 100, resultUrl: url } : f
-    ))
+      setFiles(prev => prev.map(f => 
+        f.id === pdfFile.id ? { ...f, status: 'done', progress: 100, resultUrl: url } : f
+      ))
+    } catch (error) {
+      setFiles(prev => prev.map(f => 
+        f.id === pdfFile.id 
+          ? { ...f, status: 'error', error: 'Conversion failed' }
+          : f
+      ))
+    }
   }
 
-  const splitPDF = async (pdfFile: PDFFile) => {
-    if (!splitPages) throw new Error('Please specify pages')
+  const splitPDF = async () => {
+    if (!splitConfig || !splitConfig.selectedPages) {
+      alert('Please select pages to extract')
+      return
+    }
+
+    const file = files[0]
+    if (!file) return
 
     const formData = new FormData()
-    formData.append('file', pdfFile.file)
-    formData.append('pages', splitPages)
+    formData.append('file', file.file)
+    formData.append('pages', splitConfig.selectedPages)
 
     setFiles(prev => prev.map(f => 
-      f.id === pdfFile.id ? { ...f, status: 'processing', progress: 40 } : f
+      f.id === file.id ? { ...f, status: 'processing', progress: 40 } : f
     ))
 
-    const response = await fetch(`${API_URL}/api/split`, {
-      method: 'POST',
-      body: formData
-    })
+    try {
+      const response = await fetch(`${API_URL}/api/split`, {
+        method: 'POST',
+        body: formData
+      })
 
-    if (!response.ok) throw new Error('Split failed')
+      if (!response.ok) throw new Error('Split failed')
 
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
 
-    setFiles(prev => prev.map(f => 
-      f.id === pdfFile.id ? { ...f, status: 'done', progress: 100, resultUrl: url } : f
-    ))
+      setFiles(prev => prev.map(f => 
+        f.id === file.id ? { ...f, status: 'done', progress: 100, resultUrl: url } : f
+      ))
+    } catch (error) {
+      setFiles(prev => prev.map(f => 
+        f.id === file.id 
+          ? { ...f, status: 'error', error: 'Split failed' }
+          : f
+      ))
+    }
   }
 
   const mergeAllPDFs = async () => {
@@ -313,6 +390,7 @@ function ToolPage() {
         file: new File([], 'merged.pdf'),
         name: 'merged.pdf',
         size: blob.size,
+        totalPages: 0,
         status: 'done',
         progress: 100,
         resultUrl: url
@@ -328,6 +406,9 @@ function ToolPage() {
       if (file?.resultUrl) URL.revokeObjectURL(file.resultUrl)
       return prev.filter(f => f.id !== id)
     })
+    if (splitConfig?.fileId === id) {
+      setSplitConfig(null)
+    }
   }
 
   const downloadFile = (url: string, filename: string) => {
@@ -337,6 +418,129 @@ function ToolPage() {
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
+  }
+
+  // 页面选择器组件
+  const PageSelector = () => {
+    if (!splitConfig) return null
+    
+    const totalPages = splitConfig.totalPages
+    const pages = Array.from({ length: totalPages }, (_, i) => i + 1)
+    
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white rounded-2xl border-2 border-violet-200 p-6 shadow-lg"
+      >
+        <h3 className="text-lg font-bold text-slate-900 mb-4">
+          Select Pages to Extract
+        </h3>
+        
+        <p className="text-sm text-slate-600 mb-4">
+          Total pages: <span className="font-semibold text-violet-600">{totalPages}</span>
+        </p>
+
+        {/* 模式选择 */}
+        <div className="flex gap-2 mb-4">
+          {['custom', 'all', 'range'].map((mode) => (
+            <button
+              key={mode}
+              onClick={() => {
+                setSplitConfig(prev => prev ? { ...prev, pageMode: mode as any } : null)
+                if (mode === 'all') {
+                  setSplitConfig(prev => prev ? { ...prev, selectedPages: `1-${totalPages}` } : null)
+                } else if (mode === 'range') {
+                  setSplitConfig(prev => prev ? { ...prev, selectedPages: '' } : null)
+                }
+              }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                splitConfig.pageMode === mode
+                  ? 'bg-violet-500 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {mode === 'custom' && 'Custom'}
+              {mode === 'all' && 'All Pages'}
+              {mode === 'range' && 'Page Range'}
+            </button>
+          ))}
+        </div>
+
+        {/* 页面网格 - Custom 模式 */}
+        {splitConfig.pageMode === 'custom' && (
+          <div className="grid grid-cols-8 gap-2 mb-4 max-h-48 overflow-y-auto p-2 bg-slate-50 rounded-xl">
+            {pages.map((pageNum) => {
+              const isSelected = splitConfig.selectedPages
+                .split(',')
+                .some(p => {
+                  if (p.includes('-')) {
+                    const [start, end] = p.split('-').map(Number)
+                    return pageNum >= start && pageNum <= end
+                  }
+                  return Number(p) === pageNum
+                })
+              
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => {
+                    const current = splitConfig.selectedPages
+                      .split(',')
+                      .filter(p => p)
+                    
+                    if (isSelected) {
+                      // 移除选择（简化处理，实际应该处理范围）
+                      setSplitConfig(prev => prev ? { ...prev, selectedPages: '' } : null)
+                    } else {
+                      current.push(String(pageNum))
+                      setSplitConfig(prev => prev ? { 
+                        ...prev, 
+                        selectedPages: current.join(',')
+                      } : null)
+                    }
+                  }}
+                  className={`w-10 h-10 rounded-lg text-sm font-medium transition-all ${
+                    isSelected
+                      ? 'bg-violet-500 text-white'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:border-violet-300'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {/* 输入框 - 所有模式都显示 */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-slate-700 mb-2">
+            Page selection (e.g., 1,3,5-10)
+          </label>
+          <input
+            type="text"
+            value={splitConfig.selectedPages}
+            onChange={(e) => setSplitConfig(prev => prev ? { 
+              ...prev, 
+              selectedPages: e.target.value,
+              pageMode: 'custom'
+            } : null)}
+            placeholder="Enter page numbers or ranges"
+            className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
+          />
+        </div>
+
+        {/* 拆分按钮 */}
+        <button
+          onClick={splitPDF}
+          disabled={!splitConfig.selectedPages || files[0]?.status === 'processing'}
+          className="w-full py-4 bg-gradient-to-r from-violet-500 to-purple-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Split PDF
+        </button>
+      </motion.div>
+    )
   }
 
   return (
@@ -387,30 +591,6 @@ function ToolPage() {
 
       {/* Main Content */}
       <main className="max-w-2xl mx-auto px-4 sm:px-6 pb-20">
-        {/* Split Pages Input */}
-        {tool.id === 'split' && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-4"
-          >
-            <label className="block text-sm font-semibold text-slate-700 mb-2">
-              Pages to Extract (e.g., 1,3,5-10)
-            </label>
-            <input
-              type="text"
-              value={splitPages}
-              onChange={(e) => setSplitPages(e.target.value)}
-              placeholder="Enter page numbers or ranges"
-              className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </motion.div>
-        )}
-
-        {/* 
-          优化方案：上传区域和文件卡片在同一位置
-          没有文件时显示上传区，有文件时显示卡片
-        */}
         <AnimatePresence mode="wait">
           {!hasFiles ? (
             <motion.div
@@ -456,49 +636,119 @@ function ToolPage() {
             </motion.div>
           ) : (
             <motion.div
-              key="files"
+              key="content"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.3 }}
-              className="space-y-3"
+              className="space-y-4"
             >
-              {/* 文件卡片列表 - 直接显示在上传区域位置 */}
+              {/* 文件卡片 */}
               {files.map((file) => (
-                <FileCard
+                <div
                   key={file.id}
-                  file={file}
-                  tool={tool}
-                  onRemove={() => removeFile(file.id)}
-                  onDownload={() => downloadFile(file.resultUrl!, file.name.replace('.pdf', tool.outputExt))}
-                />
+                  className="bg-white rounded-2xl border-2 border-slate-200 p-5 shadow-sm"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="relative shrink-0">
+                      <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${tool.color} flex items-center justify-center`}>
+                        <FileText className="w-6 h-6 text-white" />
+                      </div>
+                      {file.status === 'done' && (
+                        <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-white">
+                          <Check className="w-3 h-3 text-white" />
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="font-semibold text-slate-900 truncate pr-4">{file.name}</p>
+                        <button
+                          onClick={() => removeFile(file.id)}
+                          className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                      
+                      <p className="text-sm text-slate-500">
+                        {filesize(file.size)}
+                        {file.totalPages > 0 && (
+                          <span className="ml-2 text-violet-600 font-medium">
+                            • {file.totalPages} pages
+                          </span>
+                        )}
+                      </p>
+                      
+                      {file.status === 'analyzing' && (
+                        <div className="mt-2 flex items-center gap-2 text-sm text-violet-600">
+                          <div className="w-4 h-4 border-2 border-violet-600 border-t-transparent rounded-full animate-spin"></div>
+                          Analyzing PDF...
+                        </div>
+                      )}
+                      
+                      {file.status === 'processing' && (
+                        <div className="mt-3">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-xs font-medium text-violet-600">Processing...</span>
+                            <span className="text-xs font-bold text-violet-600">{Math.round(file.progress)}%</span>
+                          </div>
+                          <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full bg-gradient-to-r ${tool.color}`}
+                              style={{ width: `${file.progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      
+                      {file.status === 'error' && (
+                        <div className="mt-2 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">
+                          {file.error}
+                        </div>
+                      )}
+                      
+                      {file.status === 'done' && file.resultUrl && (
+                        <div className="mt-3 flex items-center gap-3">
+                          <div className="flex-1 flex items-center gap-1.5 text-sm text-emerald-600 bg-emerald-50 px-3 py-2 rounded-lg">
+                            <Check className="w-4 h-4" />
+                            <span>Ready for download</span>
+                          </div>
+                          <button
+                            onClick={() => downloadFile(file.resultUrl!, file.name.replace('.pdf', tool.outputExt))}
+                            className={`px-4 py-2 bg-gradient-to-r ${tool.color} text-white text-sm font-semibold rounded-lg hover:shadow-lg transition-all flex items-center gap-1.5`}
+                          >
+                            <Download className="w-4 h-4" />
+                            Download
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               ))}
 
-              {/* Merge 按钮（仅 Merge 工具且有多文件时） */}
+              {/* Split PDF：页面选择器 */}
+              {tool.id === 'split' && files[0]?.status === 'ready' && <PageSelector />}
+
+              {/* Merge PDF：合并按钮 */}
               {tool.id === 'merge' && files.length >= 2 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="pt-4"
-                >
+                <div className="pt-4">
                   <button
                     onClick={mergeAllPDFs}
                     disabled={files.some(f => f.status === 'processing')}
-                    className={`w-full py-4 bg-gradient-to-r ${tool.color} text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
+                    className={`w-full py-4 bg-gradient-to-r ${tool.color} text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
                   >
                     <Combine className="w-5 h-5 inline mr-2" />
                     Merge {files.length} PDFs into one
                   </button>
-                </motion.div>
+                </div>
               )}
 
-              {/* 添加更多文件按钮（仅 Merge 工具） */}
+              {/* Merge：添加更多文件 */}
               {tool.id === 'merge' && files.length < tool.acceptedFiles && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="pt-2"
-                >
+                <div className="pt-2">
                   <div
                     {...getRootProps()}
                     className="relative cursor-pointer rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-400 bg-white p-4 text-center transition-all"
@@ -506,121 +756,26 @@ function ToolPage() {
                     <input {...getInputProps()} />
                     <span className="text-slate-500 font-medium">+ Add more PDFs</span>
                   </div>
-                </motion.div>
+                </div>
               )}
 
-              {/* 重新开始按钮 */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="pt-4 text-center"
-              >
+              {/* 重新开始 */}
+              <div className="pt-4 text-center">
                 <button
-                  onClick={() => setFiles([])}
+                  onClick={() => {
+                    setFiles([])
+                    setSplitConfig(null)
+                  }}
                   className="text-slate-500 hover:text-slate-700 font-medium text-sm"
                 >
                   Start over
                 </button>
-              </motion.div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
       </main>
     </div>
-  )
-}
-
-// 文件卡片组件 - 优化进度条显示
-function FileCard({ file, tool, onRemove, onDownload }: { 
-  file: PDFFile
-  tool: ToolConfig
-  onRemove: () => void
-  onDownload: () => void
-}) {
-  const isProcessing = file.status === 'uploading' || file.status === 'processing'
-  const isDone = file.status === 'done'
-  const isError = file.status === 'error'
-
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="bg-white rounded-2xl border-2 border-slate-200 p-5 shadow-sm"
-    >
-      <div className="flex items-start gap-4">
-        {/* 图标 */}
-        <div className="relative shrink-0">
-          <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${tool.color} flex items-center justify-center`}>
-            <FileText className="w-6 h-6 text-white" />
-          </div>
-          {isDone && (
-            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-white">
-              <Check className="w-3 h-3 text-white" />
-            </div>
-          )}
-        </div>
-        
-        {/* 文件信息 */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-1">
-            <p className="font-semibold text-slate-900 truncate pr-4">{file.name}</p>
-            <button
-              onClick={onRemove}
-              className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          
-          <p className="text-sm text-slate-500">{filesize(file.size)}</p>
-          
-          {/* 进度条 - 更明显的样式 */}
-          {isProcessing && (
-            <div className="mt-3">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-medium text-blue-600">
-                  {file.status === 'uploading' ? 'Uploading...' : 'Converting...'}
-                </span>
-                <span className="text-xs font-bold text-blue-600">{Math.round(file.progress)}%</span>
-              </div>
-              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                <motion.div 
-                  className={`h-full rounded-full bg-gradient-to-r ${tool.color}`}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${file.progress}%` }}
-                  transition={{ duration: 0.3 }}
-                />
-              </div>
-            </div>
-          )}
-          
-          {/* 状态提示 */}
-          {isError && (
-            <div className="mt-2 flex items-center gap-1.5 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">
-              <X className="w-4 h-4" />
-              <span>{file.error || 'Conversion failed'}</span>
-            </div>
-          )}
-          
-          {isDone && (
-            <div className="mt-3 flex items-center gap-3">
-              <div className="flex-1 flex items-center gap-1.5 text-sm text-emerald-600 bg-emerald-50 px-3 py-2 rounded-lg">
-                <Check className="w-4 h-4" />
-                <span>Ready for download</span>
-              </div>
-              <button
-                onClick={onDownload}
-                className={`px-4 py-2 bg-gradient-to-r ${tool.color} text-white text-sm font-semibold rounded-lg hover:shadow-lg transition-all flex items-center gap-1.5`}
-              >
-                <Download className="w-4 h-4" />
-                Download
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </motion.div>
   )
 }
 

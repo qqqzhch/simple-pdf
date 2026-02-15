@@ -184,6 +184,45 @@ async def split_pdf(
             input_path.unlink()
         raise HTTPException(500, f"Split failed: {str(e)}")
 
+@app.post("/api/pdf-info")
+async def get_pdf_info(file: UploadFile = File(...)):
+    """获取PDF信息（页数等）"""
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(400, "Only PDF files allowed")
+    
+    from PyPDF2 import PdfReader
+    
+    file_id = str(uuid.uuid4())
+    input_path = TEMP_DIR / f"{file_id}.pdf"
+    
+    try:
+        content = await file.read()
+        
+        # 验证文件大小
+        if len(content) > 50 * 1024 * 1024:
+            raise HTTPException(400, "File too large. Max 50MB allowed.")
+        
+        with open(input_path, "wb") as f:
+            f.write(content)
+        
+        reader = PdfReader(str(input_path))
+        num_pages = len(reader.pages)
+        
+        # 立即清理临时文件
+        if input_path.exists():
+            input_path.unlink()
+        
+        return {
+            "filename": file.filename,
+            "pages": num_pages,
+            "size": len(content)
+        }
+        
+    except Exception as e:
+        if input_path.exists():
+            input_path.unlink()
+        raise HTTPException(500, f"Failed to read PDF: {str(e)}")
+
 @app.get("/api/health")
 async def health_check():
     """健康检查"""
