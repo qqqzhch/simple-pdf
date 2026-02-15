@@ -1,8 +1,11 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useDropzone } from 'react-dropzone'
+import { filesize } from 'filesize'
 import { 
   Upload, FileText, Download, X, Check, Loader2, 
-  FileUp, Combine, Scissors, ArrowRight, Shield, Zap, 
-  Clock, FileCheck, Trash2, GripVertical
+  FileUp, Combine, Scissors, Zap, 
+  FileCheck, Trash2, AlertCircle
 } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -53,43 +56,70 @@ const tools = [
   }
 ]
 
+// 模拟进度增长（实际项目中可以用真实的 SSE/WebSocket 进度）
+const useSimulatedProgress = (
+  status: 'uploading' | 'processing' | 'done' | 'error',
+  targetProgress: number,
+  onComplete?: () => void
+) => {
+  const [progress, setProgress] = useState(0)
+
+  useEffect(() => {
+    if (status === 'done') {
+      setProgress(100)
+      onComplete?.()
+      return
+    }
+    if (status === 'error') {
+      return
+    }
+    if (status === 'uploading' || status === 'processing') {
+      const interval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= targetProgress) {
+            clearInterval(interval)
+            return targetProgress
+          }
+          // 非线性增长，先快后慢
+          const increment = Math.max(1, (targetProgress - prev) * 0.1)
+          return Math.min(prev + increment, targetProgress)
+        })
+      }, 150)
+      return () => clearInterval(interval)
+    }
+  }, [status, targetProgress, onComplete])
+
+  return progress
+}
+
+// 格式化剩余时间
+const formatTimeRemaining = (progress: number): string => {
+  if (progress >= 90) return '即将完成...'
+  if (progress >= 70) return '剩余约 5 秒'
+  if (progress >= 50) return '剩余约 10 秒'
+  if (progress >= 30) return '剩余约 20 秒'
+  return '正在处理...'
+}
+
 function App() {
   const [files, setFiles] = useState<PDFFile[]>([])
-  const [isDragging, setIsDragging] = useState(false)
   const [activeTab, setActiveTab] = useState<ToolType>('convert')
   const [splitPages, setSplitPages] = useState('')
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  // 文件输入引用（保留以备后续使用)
 
   const activeTool = tools.find(t => t.id === activeTab)!
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }, [])
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const pdfFiles = acceptedFiles.filter(file => file.type === 'application/pdf')
+    addFiles(pdfFiles)
+  }, [activeTab, files.length])
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-  }, [])
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-    
-    const droppedFiles = Array.from(e.dataTransfer.files).filter(
-      file => file.type === 'application/pdf'
-    )
-    
-    addFiles(droppedFiles)
-  }, [])
-
-  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(e.target.files || []).filter(
-      file => file.type === 'application/pdf'
-    )
-    
-    addFiles(selectedFiles)
-  }, [])
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: { 'application/pdf': ['.pdf'] },
+    multiple: activeTab === 'merge',
+    noClick: files.length > 0
+  })
 
   const addFiles = (newFiles: File[]) => {
     const maxFiles = activeTool.acceptedFiles
@@ -260,13 +290,8 @@ function App() {
     document.body.removeChild(a)
   }
 
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes'
-    const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-  }
+  // 判断是否显示上传区域
+  const showUploadArea = files.length === 0 || activeTab === 'merge'
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
@@ -288,18 +313,6 @@ function App() {
                 <p className="text-xs text-slate-500 font-medium">Free PDF Tools</p>
               </div>
             </div>
-            
-            <nav className="hidden md:flex items-center gap-1 bg-slate-100/80 rounded-full p-1">
-              {['Tools', 'Pricing', 'API'].map((item) => (
-                <a
-                  key={item}
-                  href="#"
-                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 rounded-full hover:bg-white transition-all"
-                >
-                  {item}
-                </a>
-              ))}
-            </nav>
           </div>
         </div>
       </header>
@@ -307,42 +320,50 @@ function App() {
       {/* Hero Section */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-blue-50/50 to-transparent"></div>
-        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-16 pb-12">
+        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-12 pb-8">
           <div className="text-center">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-100 rounded-full text-sm text-blue-700 font-medium mb-6">
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-100 rounded-full text-sm text-blue-700 font-medium mb-6"
+            >
               <Zap className="w-4 h-4" />
               <span>Free forever, no registration required</span>
-            </div>
+            </motion.div>
             
-            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-slate-900 mb-6 tracking-tight">
+            <motion.h2 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="text-4xl sm:text-5xl lg:text-6xl font-bold text-slate-900 mb-6 tracking-tight"
+            >
               Convert PDF Files
               <span className="block bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
                 In Seconds
               </span>
-            </h2>
+            </motion.h2>
             
-            <p className="text-lg text-slate-600 max-w-2xl mx-auto mb-4">
+            <motion.p 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="text-lg text-slate-600 max-w-2xl mx-auto"
+            >
               The simplest PDF converter. No ads, no watermarks, completely free.
-            </p>
-            
-            <div className="flex items-center justify-center gap-6 text-sm text-slate-500">
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-emerald-500" />
-                <span>Secure & Private</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-blue-500" />
-                <span>Auto-delete in 1 hour</span>
-              </div>
-            </div>
+            </motion.p>
           </div>
         </div>
       </section>
 
       {/* Main Content */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 pb-20">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 pb-20">
         {/* Tool Selection */}
-        <div className="grid md:grid-cols-3 gap-4 mb-10">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="grid md:grid-cols-3 gap-4 mb-8"
+        >
           {tools.map((tool) => {
             const Icon = tool.icon
             const isActive = activeTab === tool.id
@@ -355,40 +376,38 @@ function App() {
                   setFiles([])
                   setSplitPages('')
                 }}
-                className={`group relative p-6 rounded-2xl border-2 text-left transition-all duration-300 ${
+                className={`group relative p-5 rounded-2xl border-2 text-left transition-all duration-300 ${
                   isActive
-                    ? `${tool.bgColor} ${tool.borderColor} shadow-lg shadow-${tool.color.split('-')[1]}-500/10`
+                    ? `${tool.bgColor} ${tool.borderColor} shadow-lg`
                     : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-md'
                 }`}
               >
-                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${tool.color} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition-transform`}>
-                  <Icon className="w-6 h-6 text-white" />
+                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${tool.color} flex items-center justify-center mb-3 shadow-lg transition-transform ${isActive ? 'scale-110' : 'group-hover:scale-105'}`}>
+                  <Icon className="w-5 h-5 text-white" />
                 </div>
                 
-                <h3 className={`font-bold text-lg mb-1 ${isActive ? 'text-slate-900' : 'text-slate-700'}`}>
+                <h3 className={`font-bold text-base mb-1 ${isActive ? 'text-slate-900' : 'text-slate-700'}`}>
                   {tool.label}
                 </h3>
                 
-                <p className={`text-sm ${isActive ? 'text-slate-600' : 'text-slate-500'}`}>
+                <p className={`text-xs ${isActive ? 'text-slate-600' : 'text-slate-500'}`}>
                   {tool.description}
                 </p>
-                
-                {isActive && (
-                  <div className="absolute top-4 right-4">
-                    <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                  </div>
-                )}
               </button>
             )
           })}
-        </div>
+        </motion.div>
 
-        {/* Upload Section */}
-        <div className="max-w-3xl mx-auto">
-          {/* Split Pages Input */}
+        {/* Split Pages Input */}
+        <AnimatePresence>
           {activeTab === 'split' && (
-            <div className="mb-6 animate-fade-in">
-              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mb-6"
+            >
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
                 <label className="block text-sm font-semibold text-slate-700 mb-2">
                   Pages to Extract
                 </label>
@@ -403,267 +422,294 @@ function App() {
                   Enter page numbers separated by commas, or ranges with hyphens
                 </p>
               </div>
-            </div>
+            </motion.div>
           )}
+        </AnimatePresence>
 
-          {/* Upload Area */}
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`relative group cursor-pointer rounded-3xl border-2 border-dashed transition-all duration-300 ${
-              isDragging
-                ? `border-${activeTool.color.split('-')[1]}-500 bg-${activeTool.color.split('-')[1]}-50 scale-[1.02]`
-                : 'border-slate-300 hover:border-slate-400 bg-white hover:bg-slate-50'
-            }`}
-            style={{ minHeight: '280px' }}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf"
-              multiple={activeTab === 'merge'}
-              onChange={handleFileInput}
-              className="hidden"
-            />
-            
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-8">
-              <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${activeTool.color} flex items-center justify-center mb-6 shadow-xl group-hover:scale-110 transition-transform duration-300`}>
-                <Upload className="w-10 h-10 text-white" />
-              </div>
-              
-              <h3 className="text-xl font-semibold text-slate-900 mb-2">
-                Drop your PDF here
-              </h3>
-              
-              <p className="text-slate-500 text-center mb-4">
-                or click to browse from your computer
-              </p>
-              
-              <div className="flex items-center gap-2 text-sm text-slate-400">
-                <FileCheck className="w-4 h-4" />
-                <span>Max file size: 50MB</span>
-                {activeTab === 'merge' && (
-                  <>
-                    <span className="mx-2">•</span>
-                    <span>Up to 10 files</span>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Merge Button */}
-          {activeTab === 'merge' && files.length >= 2 && (
-            <div className="mt-6 text-center">
-              <button
-                onClick={mergeAllPDFs}
-                className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold rounded-2xl shadow-lg shadow-emerald-500/25 hover:shadow-xl hover:shadow-emerald-500/30 hover:scale-105 transition-all"
+        {/* Upload Area - 仅当有文件时才显示 */}
+        <AnimatePresence>
+          {showUploadArea && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div
+                {...getRootProps()}
+                className={`relative group cursor-pointer rounded-3xl border-2 border-dashed transition-all duration-300 ${
+                  isDragActive
+                    ? `border-blue-500 bg-blue-50 scale-[1.01]`
+                    : 'border-slate-300 hover:border-slate-400 bg-white hover:bg-slate-50'
+                }`}
+                style={{ minHeight: files.length > 0 ? '120px' : '280px' }}
               >
-                <Combine className="w-5 h-5" />
-                Merge {files.length} PDF{files.length > 1 ? 's' : ''}
-              </button>
-            </div>
-          )}
-
-          {/* File List */}
-          {files.length > 0 && (
-            <div className="mt-8">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-slate-900">
-                  Files ({files.length})
-                </h3>
-                <button
-                  onClick={clearAllFiles}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Clear all
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                {files.map((file) => (
-                  <div
-                    key={file.id}
-                    className="group bg-white rounded-2xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-all"
+                <input {...getInputProps()} />
+                
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-8">
+                  <motion.div 
+                    animate={isDragActive ? { scale: 1.1, y: -5 } : { scale: 1, y: 0 }}
+                    className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${activeTool.color} flex items-center justify-center mb-4 shadow-xl`}
                   >
-                    <div className="flex items-center gap-4">
-                      {activeTab === 'merge' && files.length > 1 && file.status !== 'done' && (
-                        <div className="cursor-move text-slate-300">
-                          <GripVertical className="w-5 h-5" />
-                        </div>
-                      )}
-                      
-                      <div className="relative">
-                        <div className="w-12 h-12 bg-gradient-to-br from-red-100 to-orange-100 rounded-xl flex items-center justify-center">
-                          <FileText className="w-6 h-6 text-red-500" />
-                        </div>
-                        {file.status === 'done' && (
-                          <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center">
-                            <Check className="w-3 h-3 text-white" />
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-slate-900 truncate">
-                          {file.name}
-                        </p>
-                        <p className="text-sm text-slate-500">
-                          {formatSize(file.size)}
-                        </p>
-                        
-                        {file.error && (
-                          <p className="text-sm text-red-600 mt-1 flex items-center gap-1">
-                            <X className="w-3 h-3" />
-                            {file.error}
-                          </p>
-                        )}
-                        
-                        {file.status !== 'done' && file.status !== 'error' && (
-                          <div className="mt-2">
-                            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                              <div 
-                                className={`h-full rounded-full transition-all duration-500 ${
-                                  file.status === 'processing'
-                                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500'
-                                    : 'bg-slate-300'
-                                }`}
-                                style={{ width: `${file.progress}%` }}
-                              />
-                            </div>
-                            <div className="flex items-center justify-between mt-1">
-                              <p className="text-xs text-slate-500">
-                                {file.status === 'uploading' && 'Uploading...'}
-                                {file.status === 'processing' && 'Processing...'}
-                              </p>
-                              <p className="text-xs font-medium text-slate-600">
-                                {file.progress}%
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center gap-2">
-                        {file.status === 'done' && file.resultUrl && (
-                          <button
-                            onClick={() => downloadFile(
-                              file.resultUrl!, 
-                              file.name.replace('.pdf', activeTab === 'convert' ? '.docx' : '.pdf')
-                            )}
-                            className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white font-medium rounded-xl hover:bg-slate-800 transition-all"
-                          >
-                            <Download className="w-4 h-4" />
-                            Download
-                          </button>
-                        )}
-                        
-                        {file.status === 'processing' && (
-                          <div className="w-10 h-10 flex items-center justify-center">
-                            <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
-                          </div>
-                        )}
-                        
-                        <button
-                          onClick={() => removeFile(file.id)}
-                          className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
-                        >
-                          <X className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </div>
+                    <Upload className="w-8 h-8 text-white" />
+                  </motion.div>
+                  
+                  <h3 className="text-lg font-semibold text-slate-900 mb-1">
+                    {files.length > 0 ? 'Add more PDFs' : 'Drop your PDF here'}
+                  </h3>
+                  
+                  <p className="text-slate-500 text-sm">
+                    or click to browse
+                  </p>
+                  
+                  <div className="flex items-center gap-2 text-xs text-slate-400 mt-3">
+                    <FileCheck className="w-3 h-3" />
+                    <span>Max 50MB</span>
+                    {activeTab === 'merge' && (
+                      <>
+                        <span className="mx-1">•</span>
+                        <span>Up to 10 files</span>
+                      </>
+                    )}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Features Grid */}
-        <div className="grid md:grid-cols-3 gap-6 mt-20">
-          {[
-            {
-              icon: Zap,
-              title: 'Lightning Fast',
-              desc: 'Convert your files in seconds with our optimized processing engine.',
-              color: 'from-amber-400 to-orange-500'
-            },
-            {
-              icon: Shield,
-              title: 'Privacy First',
-              desc: 'Your files are automatically deleted from our servers after 1 hour.',
-              color: 'from-emerald-400 to-teal-500'
-            },
-            {
-              icon: FileCheck,
-              title: '100% Free',
-              desc: 'No hidden fees, no credit card required. Use all features for free.',
-              color: 'from-blue-400 to-indigo-500'
-            }
-          ].map((feature, i) => (
-            <div key={i} className="group bg-white rounded-2xl border border-slate-200 p-6 hover:shadow-lg hover:border-slate-300 transition-all">
-              <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition-transform`}>
-                <feature.icon className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="font-bold text-slate-900 mb-2">{feature.title}</h3>
-              <p className="text-slate-600 text-sm leading-relaxed">{feature.desc}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* How It Works */}
-        <div className="mt-20">
-          <h3 className="text-2xl font-bold text-center text-slate-900 mb-10">
-            How It Works
-          </h3>
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              { step: 1, title: 'Upload', desc: 'Drag and drop your PDF files' },
-              { step: 2, title: 'Convert', desc: 'We process your files securely' },
-              { step: 3, title: 'Download', desc: 'Get your converted files instantly' }
-            ].map((item) => (
-              <div key={item.step} className="relative flex flex-col items-center text-center">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg mb-4 shadow-lg">
-                  {item.step}
                 </div>
-                <h4 className="font-semibold text-slate-900 mb-2">{item.title}</h4>
-                <p className="text-sm text-slate-500">{item.desc}</p>
-                {item.step < 3 && (
-                  <ArrowRight className="hidden md:block absolute top-6 -right-4 w-6 h-6 text-slate-300" />
-                )}
               </div>
-            ))}
-          </div>
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* File List with Progress */}
+        <AnimatePresence>
+          {files.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="mt-6 space-y-4"
+            >
+              {/* Merge Button for merge mode */}
+              {activeTab === 'merge' && files.length >= 2 && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="text-center mb-6"
+                >
+                  <button
+                    onClick={mergeAllPDFs}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/25 hover:shadow-xl hover:scale-105 transition-all"
+                  >
+                    <Combine className="w-5 h-5" />
+                    Merge {files.length} PDF{files.length > 1 ? 's' : ''}
+                  </button>
+                </motion.div>
+              )}
+
+              {/* File Cards */}
+              {files.map((file, index) => (
+                <FileCard
+                  key={file.id}
+                  file={file}
+                  index={index}
+                  onRemove={() => removeFile(file.id)}
+                  onDownload={() => downloadFile(
+                    file.resultUrl!,
+                    file.name.replace('.pdf', activeTab === 'convert' ? '.docx' : '.pdf')
+                  )}
+                />
+              ))}
+
+              {/* Clear All */}
+              {files.some(f => f.status === 'done' || f.status === 'error') && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex justify-center"
+                >
+                  <button
+                    onClick={clearAllFiles}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Clear all
+                  </button>
+                </motion.div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center">
                 <FileText className="w-4 h-4 text-white" />
               </div>
               <span className="font-semibold text-slate-900">SimplePDF</span>
             </div>
-            
             <p className="text-sm text-slate-500">
               © 2025 SimplePDF. Free PDF tools for everyone.
             </p>
-            
-            <div className="flex items-center gap-6 text-sm">
-              <a href="#" className="text-slate-500 hover:text-slate-900 transition-colors">Privacy</a>
-              <a href="#" className="text-slate-500 hover:text-slate-900 transition-colors">Terms</a>
-              <a href="#" className="text-slate-500 hover:text-slate-900 transition-colors">Contact</a>
-            </div>
           </div>
         </div>
       </footer>
     </div>
+  )
+}
+
+// 单个文件卡片组件
+interface FileCardProps {
+  file: PDFFile
+  index: number
+  onRemove: () => void
+  onDownload: () => void
+}
+
+function FileCard({ file, index, onRemove, onDownload }: FileCardProps) {
+  const simulatedProgress = useSimulatedProgress(file.status, file.progress)
+  
+  const isProcessing = file.status === 'uploading' || file.status === 'processing'
+  const isDone = file.status === 'done'
+  const isError = file.status === 'error'
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 20 }}
+      transition={{ delay: index * 0.05 }}
+      className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow"
+    >
+      <div className="flex items-center gap-4">
+        {/* File Icon */}
+        <div className="relative shrink-0">
+          <div className="w-12 h-12 bg-gradient-to-br from-red-100 to-orange-100 rounded-xl flex items-center justify-center">
+            <FileText className="w-6 h-6 text-red-500" />
+          </div>
+          
+          {/* Status Badge */}
+          <AnimatePresence mode="wait">
+            {isDone && (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                exit={{ scale: 0 }}
+                className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center"
+              >
+                <Check className="w-3 h-3 text-white" />
+              </motion.div>
+            )}
+            {isError && (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="absolute -bottom-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center"
+              >
+                <X className="w-3 h-3 text-white" />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+        
+        {/* File Info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="font-semibold text-slate-900 truncate">
+              {file.name}
+            </p>
+            <span className="text-xs text-slate-400 shrink-0">
+              {filesize(file.size)}
+            </span>
+          </div>
+          
+          {/* Progress Bar */}
+          {isProcessing && (
+            <div className="mt-3">
+              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${simulatedProgress}%` }}
+                  transition={{ duration: 0.3, ease: "easeOut" }}
+                />
+              </div>
+              <div className="flex items-center justify-between mt-2">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
+                  <span className="text-xs text-slate-500">
+                    {file.status === 'uploading' ? 'Uploading...' : 'Converting...'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-400">
+                    {formatTimeRemaining(simulatedProgress)}
+                  </span>
+                  <span className="text-xs font-medium text-slate-600 min-w-[32px] text-right">
+                    {Math.round(simulatedProgress)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Error Message */}
+          {isError && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center gap-1.5 mt-1 text-sm text-red-600"
+            >
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span>{file.error || 'Conversion failed'}</span>
+            </motion.div>
+          )}
+          
+          {/* Success Info */}
+          {isDone && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex items-center gap-1.5 mt-1 text-sm text-emerald-600"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Ready for download</span>
+            </motion.div>
+          )}
+        </div>
+        
+        {/* Actions */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Download Button */}
+          <AnimatePresence>
+            {isDone && file.resultUrl && (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={onDownload}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-xl hover:bg-slate-800 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Download
+              </motion.button>
+            )}
+          </AnimatePresence>
+          
+          {/* Remove Button */}
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={onRemove}
+            className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </motion.button>
+        </div>
+      </div>
+    </motion.div>
   )
 }
 

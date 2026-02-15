@@ -10,9 +10,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "filesize": "^11.0.13",
+    "framer-motion": "^12.34.0",
     "lucide-react": "^0.564.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-dropzone": "^15.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
