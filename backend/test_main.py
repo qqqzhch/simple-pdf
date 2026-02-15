@@ -209,6 +209,49 @@ def test_convert_invalid_file():
     assert response.status_code == 400
     assert "Only PDF files" in response.json()["detail"]
 
+# ==================== Compress PDF Tests ====================
+
+def test_compress_pdf_success():
+    """Test compressing PDF successfully"""
+    pdf_bytes = create_test_pdf(5)
+    
+    response = client.post(
+        "/api/compress",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        data={"level": "medium"}
+    )
+    
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    # Check compression info headers
+    assert "X-Original-Size" in response.headers
+    assert "X-Compressed-Size" in response.headers
+
+def test_compress_pdf_different_levels():
+    """Test compressing PDF with different compression levels"""
+    pdf_bytes = create_test_pdf(3)
+    
+    for level in ["low", "medium", "high"]:
+        response = client.post(
+            "/api/compress",
+            files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+            data={"level": level}
+        )
+        
+        assert response.status_code == 200, f"Failed for level: {level}"
+        assert response.headers["content-type"] == "application/pdf"
+
+def test_compress_invalid_file():
+    """Test compressing non-PDF file"""
+    response = client.post(
+        "/api/compress",
+        files={"file": ("test.txt", b"not a pdf", "text/plain")},
+        data={"level": "medium"}
+    )
+    
+    assert response.status_code == 400
+    assert "Only PDF files" in response.json()["detail"]
+
 # ==================== Edge Cases ====================
 
 @pytest.mark.skip(reason="Large file test causes memory issues in test environment")

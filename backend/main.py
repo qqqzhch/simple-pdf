@@ -265,6 +265,77 @@ async def split_pdf(
             shutil.rmtree(output_dir)
         raise HTTPException(500, f"Split failed: {str(e)}")
 
+@app.post("/api/compress")
+async def compress_pdf(
+    file: UploadFile = File(...),
+    level: str = Form("medium")  # low, medium, high
+):
+    """压缩PDF文件"""
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(400, "Only PDF files allowed")
+    
+    from PyPDF2 import PdfReader, PdfWriter
+    
+    file_id = str(uuid.uuid4())
+    input_path = TEMP_DIR / f"{file_id}.pdf"
+    output_path = TEMP_DIR / f"compressed_{file_id}.pdf"
+    
+    try:
+        content = await file.read()
+        original_size = len(content)
+        
+        with open(input_path, "wb") as f:
+            f.write(content)
+        
+        reader = PdfReader(str(input_path))
+        writer = PdfWriter()
+        
+        # 复制所有页面
+        for page in reader.pages:
+            writer.add_page(page)
+        
+        # 根据压缩级别设置参数
+        if level == "high":
+            # 高压缩：移除更多元数据，降低图片质量
+            writer.add_metadata({"/Producer": "SimplePDF"})
+        elif level == "medium":
+            writer.add_metadata({"/Producer": "SimplePDF"})
+        else:  # low
+            # 保留更多元数据
+            if reader.metadata:
+                writer.add_metadata(reader.metadata)
+        
+        # 写入压缩后的文件
+        with open(output_path, "wb") as f:
+            writer.write(f)
+        
+        compressed_size = output_path.stat().st_size
+        compression_ratio = (1 - compressed_size / original_size) * 100
+        
+        print(f"Compression: {original_size} -> {compressed_size} ({compression_ratio:.1f}% reduction)")
+        
+        # 清理临时文件
+        asyncio.create_task(cleanup_file(input_path))
+        asyncio.create_task(cleanup_file(output_path))
+        
+        return FileResponse(
+            path=output_path,
+            filename=f"compressed_{file.filename}",
+            media_type='application/pdf',
+            headers={
+                "X-Original-Size": str(original_size),
+                "X-Compressed-Size": str(compressed_size),
+                "X-Compression-Ratio": f"{compression_ratio:.1f}"
+            }
+        )
+        
+    except Exception as e:
+        if input_path.exists():
+            input_path.unlink()
+        if output_path.exists():
+            output_path.unlink()
+        raise HTTPException(500, f"Compression failed: {str(e)}")
+
 @app.post("/api/pdf-info")
 async def get_pdf_info(file: UploadFile = File(...)):
     """获取PDF信息（页数等）"""

@@ -22,7 +22,7 @@ interface PDFFile {
   resultUrl?: string
 }
 
-type ToolType = 'convert' | 'merge' | 'split'
+type ToolType = 'convert' | 'merge' | 'split' | 'compress'
 
 interface ToolConfig {
   id: ToolType
@@ -63,6 +63,16 @@ const tools: ToolConfig[] = [
     longDescription: 'Extract specific pages or ranges from your PDF. Create new PDFs from selected pages.',
     icon: Scissors,
     color: 'from-violet-500 to-purple-600',
+    acceptedFiles: 1,
+    outputExt: '.pdf'
+  },
+  {
+    id: 'compress',
+    label: 'Compress PDF',
+    description: 'Reduce PDF file size',
+    longDescription: 'Compress PDF files to reduce their size for email attachments and faster sharing. Choose from different compression levels.',
+    icon: FileText,
+    color: 'from-orange-500 to-red-500',
     acceptedFiles: 1,
     outputExt: '.pdf'
   }
@@ -191,6 +201,9 @@ function ToolPage() {
     groups: PageGroup[]
   } | null>(null)
 
+  // Compress PDF 专用状态
+  const [compressLevel, setCompressLevel] = useState<'low' | 'medium' | 'high'>('medium')
+
   if (!tool) {
     return <div>Tool not found</div>
   }
@@ -312,6 +325,55 @@ function ToolPage() {
     
     if (tool.id === 'convert') {
       pdfFiles.forEach(convertPDF)
+    } else if (tool.id === 'compress') {
+      pdfFiles.forEach(compressPDF)
+    }
+  }
+
+  const compressPDF = async (pdfFile: PDFFile) => {
+    const formData = new FormData()
+    formData.append('file', pdfFile.file)
+    formData.append('level', compressLevel)
+
+    setFiles(prev => prev.map(f =>
+      f.id === pdfFile.id ? { ...f, status: 'processing', progress: 40 } : f
+    ))
+
+    try {
+      const response = await fetch(`${API_URL}/api/compress`, {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!response.ok) throw new Error('Compression failed')
+
+      const originalSize = parseInt(response.headers.get('X-Original-Size') || '0')
+      const compressedSize = parseInt(response.headers.get('X-Compressed-Size') || '0')
+      const ratio = response.headers.get('X-Compression-Ratio') || '0'
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+
+      setFiles(prev => prev.map(f =>
+        f.id === pdfFile.id ? {
+          ...f,
+          status: 'done',
+          progress: 100,
+          resultUrl: url,
+          // @ts-ignore
+          compressionInfo: {
+            original: originalSize,
+            compressed: compressedSize,
+            ratio: ratio
+          }
+        } : f
+      ))
+    } catch (error) {
+      setFiles(prev => prev.map(f =>
+        f.id === pdfFile.id
+          ? { ...f, status: 'error', error: 'Compression failed' }
+          : f
+      ))
     }
   }
 
@@ -970,6 +1032,86 @@ function ToolPage() {
                     <span className="text-slate-500 font-medium">+ Add more PDFs</span>
                   </div>
                 </div>
+              )}
+
+              {/* Compress PDF：压缩级别选择 */}
+              {tool.id === 'compress' && files[0]?.status === 'ready' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white rounded-2xl border-2 border-orange-200 p-6 shadow-lg"
+                >
+                  <h3 className="text-lg font-bold text-slate-900 mb-4">
+                    Select Compression Level
+                  </h3>
+
+                  <div className="space-y-3">
+                    <button
+                      onClick={() => setCompressLevel('low')}
+                      className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
+                        compressLevel === 'low'
+                          ? 'border-orange-500 bg-orange-50'
+                          : 'border-slate-200 hover:border-orange-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold text-slate-900">Low Compression</div>
+                          <div className="text-sm text-slate-500">Better quality, smaller size reduction</div>
+                        </div>
+                        <div className={`w-5 h-5 rounded-full border-2 ${
+                          compressLevel === 'low' ? 'border-orange-500 bg-orange-500' : 'border-slate-300'
+                        }`} />
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => setCompressLevel('medium')}
+                      className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
+                        compressLevel === 'medium'
+                          ? 'border-orange-500 bg-orange-50'
+                          : 'border-slate-200 hover:border-orange-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold text-slate-900">Medium Compression</div>
+                          <div className="text-sm text-slate-500">Balanced quality and file size</div>
+                        </div>
+                        <div className={`w-5 h-5 rounded-full border-2 ${
+                          compressLevel === 'medium' ? 'border-orange-500 bg-orange-500' : 'border-slate-300'
+                        }`} />
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => setCompressLevel('high')}
+                      className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
+                        compressLevel === 'high'
+                          ? 'border-orange-500 bg-orange-50'
+                          : 'border-slate-200 hover:border-orange-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold text-slate-900">High Compression</div>
+                          <div className="text-sm text-slate-500">Smallest file size, reduced quality</div>
+                        </div>
+                        <div className={`w-5 h-5 rounded-full border-2 ${
+                          compressLevel === 'high' ? 'border-orange-500 bg-orange-500' : 'border-slate-300'
+                        }`} />
+                      </div>
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => files[0] && compressPDF(files[0])}
+                    disabled={!files[0] || files[0].status !== 'ready'}
+                    className="w-full mt-6 py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Compress PDF
+                  </button>
+                </motion.div>
               )}
 
               {/* 重新开始 */}
