@@ -472,10 +472,20 @@ async def convert_pdf_to_image(
             image_path = output_dir / f"page_{page_num + 1}.{ext}"
             
             if format == "png":
+                # PNG: 直接保存，支持透明度
                 pix.save(str(image_path))
             else:
-                # 转换为 JPG 并压缩
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                # JPG: 需要转换为 RGB（去除透明度）
+                # 使用 pix.samples 获取原始数据（兼容新旧版本 PyMuPDF）
+                if pix.n > 3:  # 有 alpha 通道 (RGBA)
+                    # 转为 RGB
+                    img = Image.frombytes("RGBA", [pix.width, pix.height], pix.samples)
+                    # 创建白色背景并合成
+                    background = Image.new("RGB", (pix.width, pix.height), (255, 255, 255))
+                    background.paste(img, mask=img.split()[3])  # 使用 alpha 通道作为 mask
+                    img = background
+                else:  # 已经是 RGB
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
                 img.save(str(image_path), "JPEG", quality=85, optimize=True)
             
             image_files.append(image_path)
