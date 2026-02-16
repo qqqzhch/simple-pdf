@@ -16,9 +16,12 @@
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
+    "fabric": "^7.1.0",
     "filesize": "^11.0.13",
     "framer-motion": "^12.34.0",
     "lucide-react": "^0.564.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.4.624",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-dropzone": "^15.0.0",
