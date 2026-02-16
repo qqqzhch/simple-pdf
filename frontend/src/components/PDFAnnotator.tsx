@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { PDFDocument, rgb as pdfRgb, StandardFonts } from 'pdf-lib'
 import * as pdfjsLib from 'pdfjs-dist'
-import { ArrowLeft, Download, Type, Square, Highlighter, Trash2, ChevronLeft, ChevronRight, Pen } from 'lucide-react'
+import { ArrowLeft, Download, Type, Square, Highlighter, Trash2, ChevronLeft, ChevronRight, Pen, Underline } from 'lucide-react'
 
 // Set worker - use local worker file
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
@@ -237,6 +237,18 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
               opacity: 0.3
             })
             break
+          case 'underline':
+            page.drawLine({
+              start: { x: annotation.x, y: height - annotation.y },
+              end: { x: annotation.x + (annotation.width || 200), y: height - annotation.y },
+              thickness: 2,
+              color: pdfRgb(
+                parseInt(annotation.color.slice(1, 3), 16) / 255,
+                parseInt(annotation.color.slice(3, 5), 16) / 255,
+                parseInt(annotation.color.slice(5, 7), 16) / 255
+              )
+            })
+            break
           case 'signature':
             if (annotation.imageData) {
               try {
@@ -332,6 +344,25 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
       y: centerY,
       width: 300,
       height: 30,
+      color: selectedColor,
+      page: currentPage - 1
+    }
+    setAnnotations([...annotations, newAnnotation])
+    setSelectedAnnotation(newAnnotation.id)
+  }
+
+  const handleAddUnderline = () => {
+    // Place in center of page
+    const centerX = canvasSize.width > 0 ? canvasSize.width / 2 - 150 : 150
+    const centerY = canvasSize.height > 0 ? canvasSize.height / 2 - 15 : 300
+    
+    const newAnnotation: Annotation = {
+      id: Date.now().toString(),
+      type: 'underline',
+      x: centerX,
+      y: centerY,
+      width: 300,
+      height: 3,
       color: selectedColor,
       page: currentPage - 1
     }
@@ -552,6 +583,15 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
           </button>
           
           <button
+            onClick={handleAddUnderline}
+            disabled={isLoading}
+            className="p-2 sm:p-3 rounded-lg text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-50"
+            title="Add Underline"
+          >
+            <Underline className="w-5 h-5" />
+          </button>
+          
+          <button
             onClick={handleStartSignature}
             disabled={isLoading}
             className="p-2 sm:p-3 rounded-lg text-slate-600 hover:bg-purple-50 hover:text-purple-600 disabled:opacity-50"
@@ -659,6 +699,16 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
                         width: ann.width || 200,
                         height: ann.height || 30,
                         backgroundColor: ann.color + '66',
+                      }}
+                    />
+                  )}
+                  {ann.type === 'underline' && (
+                    <div
+                      style={{
+                        width: ann.width || 200,
+                        height: ann.height || 3,
+                        backgroundColor: ann.color,
+                        borderBottom: `3px solid ${ann.color}`,
                       }}
                     />
                   )}
