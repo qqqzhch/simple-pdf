@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from enum import Enum
 import shutil
 import os
 import uuid
@@ -842,6 +843,134 @@ async def convert_pdf_to_ppt(file: UploadFile = File(...)):
         if output_path.exists():
             output_path.unlink()
         raise HTTPException(500, f"Conversion failed: {str(e)}")
+
+
+# ==================== PDF Encrypt ====================
+
+class Permission(str, Enum):
+    """PDF 权限选项"""
+    ALL = "all"  # 允许所有操作
+    NO_PRINT = "no_print"  # 禁止打印
+    NO_COPY = "no_copy"  # 禁止复制
+    NO_EDIT = "no_edit"  # 禁止编辑
+    NO_PRINT_COPY = "no_print_copy"  # 禁止打印和复制
+
+@app.post("/api/protect/encrypt")
+async def encrypt_pdf(
+    file: UploadFile = File(...),
+    password: str = Form(..., min_length=1),
+    permission: Permission = Form(Permission.ALL)
+):
+    """为 PDF 添加密码保护"""
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(400, "Only PDF files are allowed")
+    
+    # 验证文件大小 (50MB)
+    content = await file.read()
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(400, "File too large. Max 50MB allowed.")
+    
+    file_id = str(uuid.uuid4())
+    input_path = TEMP_DIR / f"{file_id}.pdf"
+    output_path = TEMP_DIR / f"encrypted_{file_id}.pdf"
+    
+    try:
+        # 保存上传文件
+        with open(input_path, "wb") as f:
+            f.write(content)
+        
+        # 使用 pikepdf 进行加密
+        import pikepdf
+        
+        pdf = pikepdf.open(str(input_path))
+        
+        # 设置权限标志
+        # pikepdf 10.x Permissions 参数:
+        # accessibility: 允许屏幕阅读器访问
+        # extract: 允许提取文本/图形
+        # modify_annotation: 允许修改注释
+        # modify_assembly: 允许页面操作
+        # modify_form: 允许填写表单
+        # modify_other: 允许其他修改
+        # print_lowres: 允许低分辨率打印
+        # print_highres: 允许高分辨率打印
+        
+        if permission == Permission.ALL:
+            # 允许所有操作
+            allow_print = True
+            allow_modify = True
+            allow_copy = True
+            allow_annot = True
+        elif permission == Permission.NO_PRINT:
+            allow_print = False
+            allow_modify = True
+            allow_copy = True
+            allow_annot = True
+        elif permission == Permission.NO_COPY:
+            allow_print = True
+            allow_modify = True
+            allow_copy = False
+            allow_annot = True
+        elif permission == Permission.NO_EDIT:
+            allow_print = True
+            allow_modify = False
+            allow_copy = True
+            allow_annot = False
+        elif permission == Permission.NO_PRINT_COPY:
+            allow_print = False
+            allow_modify = True
+            allow_copy = False
+            allow_annot = True
+        else:
+            allow_print = True
+            allow_modify = True
+            allow_copy = True
+            allow_annot = True
+        
+        # 使用 R=6 (AES-256) 加密
+        pdf.save(
+            str(output_path),
+            encryption=pikepdf.Encryption(
+                owner=password,
+                user=password,
+                R=6,
+                allow=pikepdf.Permissions(
+                    accessibility=True,
+                    extract=allow_copy,
+                    modify_annotation=allow_annot,
+                    modify_assembly=False,
+                    modify_form=allow_annot,
+                    modify_other=allow_modify,
+                    print_lowres=allow_print,
+                    print_highres=allow_print
+                )
+            )
+        )
+        pdf.close()
+        
+        # 启动清理任务
+        asyncio.create_task(cleanup_file(input_path))
+        asyncio.create_task(cleanup_file(output_path))
+        
+        return FileResponse(
+            path=output_path,
+            filename=f"encrypted_{file.filename}",
+            media_type='application/pdf',
+            headers={
+                "X-Permission": permission.value,
+                "X-Encrypted": "true"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # 清理临时文件
+        if input_path.exists():
+            input_path.unlink()
+        if output_path.exists():
+            output_path.unlink()
+        raise HTTPException(500, f"Encryption failed: {str(e)}")
 
 
 if __name__ == "__main__":

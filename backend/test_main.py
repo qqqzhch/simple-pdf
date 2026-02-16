@@ -467,5 +467,60 @@ def test_convert_pdf_to_ppt_empty_pdf():
     assert "no pages" in response.json()["detail"].lower()
 
 
+# ==================== PDF Encrypt Tests ====================
+
+def test_encrypt_pdf_success():
+    """Test encrypting PDF successfully"""
+    pdf_bytes = create_test_pdf(3)
+    
+    response = client.post(
+        "/api/protect/encrypt",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        data={"password": "test123", "permission": "all"}
+    )
+    
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["X-Encrypted"] == "true"
+
+def test_encrypt_pdf_with_permissions():
+    """Test encrypting PDF with different permissions"""
+    pdf_bytes = create_test_pdf(2)
+    
+    for perm in ["no_print", "no_copy", "no_edit", "no_print_copy"]:
+        response = client.post(
+            "/api/protect/encrypt",
+            files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+            data={"password": "test123", "permission": perm}
+        )
+        
+        assert response.status_code == 200, f"Failed for permission: {perm}"
+        assert response.headers["X-Permission"] == perm
+
+def test_encrypt_pdf_invalid_file():
+    """Test encrypting non-PDF file"""
+    response = client.post(
+        "/api/protect/encrypt",
+        files={"file": ("test.txt", b"not a pdf", "text/plain")},
+        data={"password": "test123"}
+    )
+    
+    assert response.status_code == 400
+    assert "Only PDF files" in response.json()["detail"]
+
+def test_encrypt_pdf_empty_password():
+    """Test encrypting PDF with empty password"""
+    pdf_bytes = create_test_pdf(2)
+    
+    response = client.post(
+        "/api/protect/encrypt",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        data={"password": ""}
+    )
+    
+    # FastAPI Form validation should reject empty password
+    assert response.status_code == 422
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
