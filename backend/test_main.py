@@ -428,5 +428,44 @@ def test_large_file_rejection():
     # In production, the file size check works correctly
     pass
 
+# ==================== PDF to PPT Tests ====================
+
+def test_convert_pdf_to_ppt_success():
+    """Test converting PDF to PPT successfully"""
+    pdf_bytes = create_test_pdf(3)
+    
+    response = client.post(
+        "/api/convert/pdf-to-ppt",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")}
+    )
+    
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    assert response.headers["X-Total-Pages"] == "3"
+
+def test_convert_pdf_to_ppt_invalid_file():
+    """Test converting non-PDF file to PPT"""
+    response = client.post(
+        "/api/convert/pdf-to-ppt",
+        files={"file": ("test.txt", b"not a pdf", "text/plain")}
+    )
+    
+    assert response.status_code == 400
+    assert "Only PDF files" in response.json()["detail"]
+
+def test_convert_pdf_to_ppt_empty_pdf():
+    """Test converting empty PDF (0 pages)"""
+    pdf_bytes = create_test_pdf(0)
+    
+    response = client.post(
+        "/api/convert/pdf-to-ppt",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")}
+    )
+    
+    # Should fail because PDF has no pages
+    assert response.status_code == 400
+    assert "no pages" in response.json()["detail"].lower()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

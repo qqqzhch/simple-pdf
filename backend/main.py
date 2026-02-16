@@ -740,6 +740,110 @@ async def health_check():
     """健康检查"""
     return {"status": "ok", "service": "simplepdf-api", "version": "1.0.1"}
 
+# ==================== PDF to PPT ====================
+
+@app.post("/api/convert/pdf-to-ppt")
+async def convert_pdf_to_ppt(file: UploadFile = File(...)):
+    """将 PDF 转换为 PPT，每页 PDF 转为 PPT 的一页"""
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(400, "Only PDF files are allowed")
+    
+    # 验证文件大小 (50MB)
+    content = await file.read()
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(400, "File too large. Max 50MB allowed.")
+    
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from pdf2image import convert_from_path
+    from PIL import Image
+    import io
+    
+    file_id = str(uuid.uuid4())
+    input_path = TEMP_DIR / f"{file_id}.pdf"
+    output_path = TEMP_DIR / f"{file_id}.pptx"
+    
+    try:
+        # 保存上传文件
+        with open(input_path, "wb") as f:
+            f.write(content)
+        
+        # 获取 PDF 页数
+        reader = PdfReader(str(input_path))
+        num_pages = len(reader.pages)
+        
+        if num_pages == 0:
+            raise HTTPException(400, "PDF has no pages")
+        
+        # 将 PDF 转换为图片
+        images = convert_from_path(str(input_path), dpi=150)
+        
+        # 创建 PPT
+        prs = Presentation()
+        
+        # 设置幻灯片尺寸为 16:9 (默认是 4:3)
+        prs.slide_width = Inches(13.333)
+        prs.slide_height = Inches(7.5)
+        
+        for img in images:
+            # 添加空白幻灯片
+            blank_slide_layout = prs.slide_layouts[6]  # 空白布局
+            slide = prs.slides.add_slide(blank_slide_layout)
+            
+            # 将图片保存到内存
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format='PNG')
+            img_bytes.seek(0)
+            
+            # 计算图片缩放比例以适应幻灯片
+            slide_width = prs.slide_width
+            slide_height = prs.slide_height
+            
+            img_width, img_height = img.size
+            aspect_ratio = img_width / img_height
+            slide_ratio = slide_width / slide_height
+            
+            if aspect_ratio > slide_ratio:
+                # 图片更宽，以宽度为准
+                new_width = slide_width
+                new_height = slide_width / aspect_ratio
+                left = 0
+                top = (slide_height - new_height) / 2
+            else:
+                # 图片更高，以高度为准
+                new_height = slide_height
+                new_width = slide_height * aspect_ratio
+                left = (slide_width - new_width) / 2
+                top = 0
+            
+            # 添加图片到幻灯片
+            slide.shapes.add_picture(img_bytes, left, top, width=new_width, height=new_height)
+        
+        # 保存 PPT
+        prs.save(str(output_path))
+        
+        # 启动清理任务
+        asyncio.create_task(cleanup_file(input_path))
+        asyncio.create_task(cleanup_file(output_path))
+        
+        return FileResponse(
+            path=output_path,
+            filename=file.filename.replace('.pdf', '.pptx'),
+            media_type='application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            headers={"X-Total-Pages": str(num_pages)}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # 清理临时文件
+        if input_path.exists():
+            input_path.unlink()
+        if output_path.exists():
+            output_path.unlink()
+        raise HTTPException(500, f"Conversion failed: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     import os

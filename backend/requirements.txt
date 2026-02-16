@@ -11,6 +11,8 @@ pdf2image
 img2pdf
 pdfplumber
 openpyxl
+python-pptx
+pikepdf
 
 # Testing
 pytest
