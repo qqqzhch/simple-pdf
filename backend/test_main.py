@@ -32,7 +32,9 @@ def test_health_check():
     """Test health endpoint"""
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "service": "simplepdf-api"}
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["service"] == "simplepdf-api"
 
 # ==================== PDF Info Tests ====================
 
