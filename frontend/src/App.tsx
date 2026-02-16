@@ -22,7 +22,7 @@ interface PDFFile {
   resultUrl?: string
 }
 
-type ToolType = 'convert' | 'merge' | 'split' | 'compress' | 'pdf-to-image' | 'image-to-pdf' | 'pdf-to-excel'
+type ToolType = 'convert' | 'merge' | 'split' | 'compress' | 'pdf-to-image' | 'image-to-pdf' | 'pdf-to-excel' | 'pdf-to-ppt' | 'encrypt' | 'decrypt' | 'watermark'
 
 interface ToolConfig {
   id: ToolType
@@ -104,6 +104,46 @@ const tools: ToolConfig[] = [
     icon: FileText,
     color: 'from-pink-500 to-rose-500',
     acceptedFiles: 20,
+    outputExt: '.pdf'
+  },
+  {
+    id: 'pdf-to-ppt',
+    label: 'PDF to PPT',
+    description: 'Convert PDF to PowerPoint',
+    longDescription: 'Convert PDF pages to PowerPoint presentation slides. Perfect for presentations and sharing.',
+    icon: FileText,
+    color: 'from-orange-600 to-red-600',
+    acceptedFiles: 1,
+    outputExt: '.pptx'
+  },
+  {
+    id: 'encrypt',
+    label: 'Encrypt PDF',
+    description: 'Password protect PDF',
+    longDescription: 'Add password protection to your PDF files. Secure your documents with AES-256 encryption.',
+    icon: Shield,
+    color: 'from-red-600 to-rose-700',
+    acceptedFiles: 1,
+    outputExt: '.pdf'
+  },
+  {
+    id: 'decrypt',
+    label: 'Decrypt PDF',
+    description: 'Remove PDF password',
+    longDescription: 'Remove password protection from PDF files. Unlock your documents for easy access.',
+    icon: Shield,
+    color: 'from-emerald-600 to-green-700',
+    acceptedFiles: 1,
+    outputExt: '.pdf'
+  },
+  {
+    id: 'watermark',
+    label: 'Add Watermark',
+    description: 'Text or image watermark',
+    longDescription: 'Add text or image watermarks to your PDF files. Protect your documents with custom watermarks.',
+    icon: FileText,
+    color: 'from-indigo-500 to-purple-600',
+    acceptedFiles: 1,
     outputExt: '.pdf'
   }
 ]
@@ -241,6 +281,24 @@ function ToolPage() {
   // Image to PDF 专用状态
   const [pdfPageSize, setPdfPageSize] = useState<'A4' | 'Letter' | 'original'>('A4')
 
+  // Encrypt PDF 专用状态
+  const [encryptPassword, setEncryptPassword] = useState('')
+  const [encryptPermission, setEncryptPermission] = useState('all')
+
+  // Decrypt PDF 专用状态
+  const [decryptPassword, setDecryptPassword] = useState('')
+
+  // Watermark 专用状态
+  const [watermarkConfig, setWatermarkConfig] = useState({
+    type: 'text' as 'text' | 'image',
+    text: '',
+    imageFile: null as File | null,
+    position: 'center' as 'center' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'tile',
+    opacity: 0.5,
+    fontSize: 48,
+    color: '#888888'
+  })
+
   if (!tool) {
     return <div>Tool not found</div>
   }
@@ -374,7 +432,7 @@ function ToolPage() {
     
     setFiles(prev => [...prev, ...pdfFiles])
     
-    if (tool.id === 'convert' || tool.id === 'pdf-to-excel') {
+    if (tool.id === 'convert' || tool.id === 'pdf-to-excel' || tool.id === 'pdf-to-ppt') {
       pdfFiles.forEach(convertPDF)
     } else if (tool.id === 'compress') {
       pdfFiles.forEach(compressPDF)
@@ -385,6 +443,11 @@ function ToolPage() {
       ))
     } else if (tool.id === 'image-to-pdf') {
       // Image to PDF: 设置文件为 ready，等待用户选择页面尺寸后点击转换
+      setFiles(prev => prev.map(f => 
+        pdfFiles.some(pf => pf.id === f.id) ? { ...f, status: 'ready', progress: 100 } : f
+      ))
+    } else if (tool.id === 'encrypt' || tool.id === 'decrypt' || tool.id === 'watermark') {
+      // Encrypt/Decrypt/Watermark: 设置文件为 ready，等待用户配置后点击转换
       setFiles(prev => prev.map(f => 
         pdfFiles.some(pf => pf.id === f.id) ? { ...f, status: 'ready', progress: 100 } : f
       ))
@@ -525,9 +588,12 @@ function ToolPage() {
 
     try {
       // Determine the correct API endpoint based on tool type
-      const apiEndpoint = tool?.id === 'pdf-to-excel' 
-        ? '/api/convert/pdf-to-excel'
-        : '/api/convert/pdf-to-word'
+      let apiEndpoint = '/api/convert/pdf-to-word'
+      if (tool?.id === 'pdf-to-excel') {
+        apiEndpoint = '/api/convert/pdf-to-excel'
+      } else if (tool?.id === 'pdf-to-ppt') {
+        apiEndpoint = '/api/convert/pdf-to-ppt'
+      }
 
       const response = await fetch(`${API_URL}${apiEndpoint}`, {
         method: 'POST',
@@ -546,6 +612,116 @@ function ToolPage() {
       setFiles(prev => prev.map(f => 
         f.id === pdfFile.id 
           ? { ...f, status: 'error', error: 'Conversion failed' }
+          : f
+      ))
+    }
+  }
+
+  // Encrypt PDF
+  const encryptPDF = async (pdfFile: PDFFile, password: string, permission: string) => {
+    const formData = new FormData()
+    formData.append('file', pdfFile.file)
+    formData.append('password', password)
+    formData.append('permission', permission)
+
+    setFiles(prev => prev.map(f => 
+      f.id === pdfFile.id ? { ...f, status: 'processing', progress: 30 } : f
+    ))
+
+    try {
+      const response = await fetch(`${API_URL}/api/protect/encrypt`, {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!response.ok) throw new Error('Encryption failed')
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+
+      setFiles(prev => prev.map(f => 
+        f.id === pdfFile.id ? { ...f, status: 'done', progress: 100, resultUrl: url } : f
+      ))
+    } catch (error) {
+      setFiles(prev => prev.map(f => 
+        f.id === pdfFile.id 
+          ? { ...f, status: 'error', error: 'Encryption failed' }
+          : f
+      ))
+    }
+  }
+
+  // Decrypt PDF
+  const decryptPDF = async (pdfFile: PDFFile, password: string) => {
+    const formData = new FormData()
+    formData.append('file', pdfFile.file)
+    formData.append('password', password)
+
+    setFiles(prev => prev.map(f => 
+      f.id === pdfFile.id ? { ...f, status: 'processing', progress: 30 } : f
+    ))
+
+    try {
+      const response = await fetch(`${API_URL}/api/protect/decrypt`, {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!response.ok) throw new Error('Decryption failed')
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+
+      setFiles(prev => prev.map(f => 
+        f.id === pdfFile.id ? { ...f, status: 'done', progress: 100, resultUrl: url } : f
+      ))
+    } catch (error) {
+      setFiles(prev => prev.map(f => 
+        f.id === pdfFile.id 
+          ? { ...f, status: 'error', error: 'Decryption failed - wrong password?' }
+          : f
+      ))
+    }
+  }
+
+  // Add Watermark
+  const addWatermark = async (pdfFile: PDFFile, watermarkConfig: any) => {
+    const formData = new FormData()
+    formData.append('file', pdfFile.file)
+    formData.append('type', watermarkConfig.type)
+    formData.append('position', watermarkConfig.position)
+    formData.append('opacity', watermarkConfig.opacity.toString())
+    
+    if (watermarkConfig.type === 'text') {
+      formData.append('text', watermarkConfig.text)
+      formData.append('fontSize', watermarkConfig.fontSize.toString())
+      formData.append('color', watermarkConfig.color)
+    } else if (watermarkConfig.type === 'image' && watermarkConfig.imageFile) {
+      formData.append('image', watermarkConfig.imageFile)
+    }
+
+    setFiles(prev => prev.map(f => 
+      f.id === pdfFile.id ? { ...f, status: 'processing', progress: 30 } : f
+    ))
+
+    try {
+      const response = await fetch(`${API_URL}/api/watermark/add`, {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!response.ok) throw new Error('Watermark failed')
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+
+      setFiles(prev => prev.map(f => 
+        f.id === pdfFile.id ? { ...f, status: 'done', progress: 100, resultUrl: url } : f
+      ))
+    } catch (error) {
+      setFiles(prev => prev.map(f => 
+        f.id === pdfFile.id 
+          ? { ...f, status: 'error', error: 'Watermark failed' }
           : f
       ))
     }
@@ -1404,6 +1580,218 @@ function ToolPage() {
                     className="w-full py-4 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Convert {files.length} Image{files.length > 1 ? 's' : ''} to PDF
+                  </button>
+                </motion.div>
+              )}
+
+              {/* Encrypt PDF: 密码设置 */}
+              {tool.id === 'encrypt' && files[0]?.status === 'ready' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white rounded-2xl border-2 border-red-200 p-6 shadow-lg"
+                >
+                  <h3 className="text-lg font-bold text-slate-900 mb-4">
+                    Encrypt PDF Settings
+                  </h3>
+
+                  {/* 密码输入 */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Password</label>
+                    <input
+                      type="password"
+                      value={encryptPassword}
+                      onChange={(e) => setEncryptPassword(e.target.value)}
+                      placeholder="Enter password"
+                      className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-red-500 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* 权限选择 */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Permissions</label>
+                    <select
+                      value={encryptPermission}
+                      onChange={(e) => setEncryptPermission(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-red-500 focus:outline-none"
+                    >
+                      <option value="all">All permissions</option>
+                      <option value="no_print">No printing</option>
+                      <option value="no_copy">No copying</option>
+                      <option value="no_edit">No editing</option>
+                      <option value="no_print_copy">No printing or copying</option>
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={() => files[0] && encryptPDF(files[0], encryptPassword, encryptPermission)}
+                    disabled={!files[0] || files[0].status !== 'ready' || !encryptPassword}
+                    className="w-full py-4 bg-gradient-to-r from-red-600 to-rose-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Encrypt PDF
+                  </button>
+                </motion.div>
+              )}
+
+              {/* Decrypt PDF: 密码输入 */}
+              {tool.id === 'decrypt' && files[0]?.status === 'ready' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white rounded-2xl border-2 border-emerald-200 p-6 shadow-lg"
+                >
+                  <h3 className="text-lg font-bold text-slate-900 mb-4">
+                    Decrypt PDF
+                  </h3>
+
+                  {/* 密码输入 */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Password</label>
+                    <input
+                      type="password"
+                      value={decryptPassword}
+                      onChange={(e) => setDecryptPassword(e.target.value)}
+                      placeholder="Enter PDF password"
+                      className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-emerald-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <button
+                    onClick={() => files[0] && decryptPDF(files[0], decryptPassword)}
+                    disabled={!files[0] || files[0].status !== 'ready' || !decryptPassword}
+                    className="w-full py-4 bg-gradient-to-r from-emerald-600 to-green-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Decrypt PDF
+                  </button>
+                </motion.div>
+              )}
+
+              {/* Watermark: 水印设置 */}
+              {tool.id === 'watermark' && files[0]?.status === 'ready' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white rounded-2xl border-2 border-indigo-200 p-6 shadow-lg"
+                >
+                  <h3 className="text-lg font-bold text-slate-900 mb-4">
+                    Watermark Settings
+                  </h3>
+
+                  {/* 类型选择 */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Type</label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setWatermarkConfig(prev => ({ ...prev, type: 'text' }))}
+                        className={`flex-1 py-3 px-4 rounded-xl border-2 font-medium transition-all ${
+                          watermarkConfig.type === 'text'
+                            ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                            : 'border-slate-200 hover:border-indigo-300'
+                        }`}
+                      >
+                        Text
+                      </button>
+                      <button
+                        onClick={() => setWatermarkConfig(prev => ({ ...prev, type: 'image' }))}
+                        className={`flex-1 py-3 px-4 rounded-xl border-2 font-medium transition-all ${
+                          watermarkConfig.type === 'image'
+                            ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                            : 'border-slate-200 hover:border-indigo-300'
+                        }`}
+                      >
+                        Image
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 文字水印设置 */}
+                  {watermarkConfig.type === 'text' && (
+                    <>
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">Text</label>
+                        <input
+                          type="text"
+                          value={watermarkConfig.text}
+                          onChange={(e) => setWatermarkConfig(prev => ({ ...prev, text: e.target.value }))}
+                          placeholder="Enter watermark text"
+                          className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-indigo-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-2">Font Size</label>
+                          <input
+                            type="number"
+                            value={watermarkConfig.fontSize}
+                            onChange={(e) => setWatermarkConfig(prev => ({ ...prev, fontSize: parseInt(e.target.value) || 48 }))}
+                            className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-indigo-500 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-2">Color</label>
+                          <input
+                            type="color"
+                            value={watermarkConfig.color}
+                            onChange={(e) => setWatermarkConfig(prev => ({ ...prev, color: e.target.value }))}
+                            className="w-full h-12 rounded-xl border-2 border-slate-200 cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* 图片水印设置 */}
+                  {watermarkConfig.type === 'image' && (
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Watermark Image</label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setWatermarkConfig(prev => ({ ...prev, imageFile: e.target.files?.[0] || null }))}
+                        className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-indigo-500 focus:outline-none"
+                      />
+                    </div>
+                  )}
+
+                  {/* 位置选择 */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Position</label>
+                    <select
+                      value={watermarkConfig.position}
+                      onChange={(e) => setWatermarkConfig(prev => ({ ...prev, position: e.target.value as any }))}
+                      className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-indigo-500 focus:outline-none"
+                    >
+                      <option value="center">Center</option>
+                      <option value="top-left">Top Left</option>
+                      <option value="top-right">Top Right</option>
+                      <option value="bottom-left">Bottom Left</option>
+                      <option value="bottom-right">Bottom Right</option>
+                      <option value="tile">Tile (Repeat)</option>
+                    </select>
+                  </div>
+
+                  {/* 透明度 */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Opacity: {Math.round(watermarkConfig.opacity * 100)}%
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={watermarkConfig.opacity}
+                      onChange={(e) => setWatermarkConfig(prev => ({ ...prev, opacity: parseFloat(e.target.value) }))}
+                      className="w-full"
+                    />
+                  </div>
+
+                  <button
+                    onClick={() => files[0] && addWatermark(files[0], watermarkConfig)}
+                    disabled={!files[0] || files[0].status !== 'ready' || (watermarkConfig.type === 'text' ? !watermarkConfig.text : !watermarkConfig.imageFile)}
+                    className="w-full py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Add Watermark
                   </button>
                 </motion.div>
               )}
