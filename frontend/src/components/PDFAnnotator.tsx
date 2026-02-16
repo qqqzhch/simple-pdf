@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { PDFDocument, rgb as pdfRgb, StandardFonts } from 'pdf-lib'
 import * as pdfjsLib from 'pdfjs-dist'
 import { ArrowLeft, Download, Type, Square, Highlighter, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -37,13 +37,18 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [selectedColor, setSelectedColor] = useState('#ef4444')
+  const [selectedAnnotation, setSelectedAnnotation] = useState<string | null>(null)
   const [textInput, setTextInput] = useState('')
   const [showTextInput, setShowTextInput] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
+  // Drag state
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  
+  const canvasContainerRef = useRef<HTMLDivElement>(null)
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null)
-  const annotationCanvasRef = useRef<HTMLCanvasElement>(null)
   const renderTaskRef = useRef<any>(null)
 
   const colors = [
@@ -80,12 +85,11 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
     loadPDF()
   }, [file])
 
-  // Render PDF page (only when pdfDoc or currentPage changes)
+  // Render PDF page
   useEffect(() => {
     const renderPDFPage = async () => {
       if (!pdfDoc || !pdfCanvasRef.current) return
       
-      // Cancel previous render if exists
       if (renderTaskRef.current) {
         renderTaskRef.current.cancel()
       }
@@ -97,23 +101,12 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
         if (!ctx) return
 
         const viewport = page.getViewport({ scale })
-        
-        // Update canvas size
         canvas.width = viewport.width
         canvas.height = viewport.height
-        
-        // Also update annotation canvas
-        if (annotationCanvasRef.current) {
-          annotationCanvasRef.current.width = viewport.width
-          annotationCanvasRef.current.height = viewport.height
-        }
-        
         setCanvasSize({ width: viewport.width, height: viewport.height })
 
-        // Clear canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-        // Render PDF page
         const renderTask = page.render({
           canvasContext: ctx,
           viewport: viewport,
@@ -140,44 +133,63 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
     }
   }, [pdfDoc, currentPage, scale])
 
-  // Draw annotations (when annotations or page changes)
-  useEffect(() => {
-    const canvas = annotationCanvasRef.current
-    if (!canvas) return
+  // Get mouse position relative to canvas
+  const getMousePos = useCallback((e: React.MouseEvent | MouseEvent) => {
+    const container = canvasContainerRef.current
+    if (!container) return { x: 0, y: 0 }
     
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+    const rect = container.getBoundingClientRect()
+    return {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    }
+  }, [])
 
-    // Clear annotation canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-
-    // Get page annotations for current page
-    const pageAnnotations = annotations.filter(a => a.page === currentPage - 1)
+  // Handle mouse down for drag start
+  const handleMouseDown = (e: React.MouseEvent, annotationId: string) => {
+    e.stopPropagation()
+    const ann = annotations.find(a => a.id === annotationId)
+    if (!ann) return
     
-    // Draw annotations
-    pageAnnotations.forEach(ann => {
-      ctx.strokeStyle = ann.color
-      ctx.fillStyle = ann.color
-      ctx.lineWidth = 2
-      
-      switch (ann.type) {
-        case 'text':
-          ctx.font = 'bold 16px Arial'
-          ctx.fillStyle = ann.color
-          ctx.fillText(ann.content || '', ann.x, ann.y)
-          break
-        case 'rect':
-          ctx.strokeStyle = ann.color
-          ctx.lineWidth = 2
-          ctx.strokeRect(ann.x, ann.y, ann.width || 100, ann.height || 50)
-          break
-        case 'highlight':
-          ctx.fillStyle = ann.color + '66' // 40% opacity
-          ctx.fillRect(ann.x, ann.y, ann.width || 200, ann.height || 30)
-          break
-      }
+    const mousePos = getMousePos(e)
+    setDraggingId(annotationId)
+    setDragOffset({
+      x: mousePos.x - ann.x,
+      y: mousePos.y - ann.y
     })
-  }, [annotations, currentPage])
+    setSelectedAnnotation(annotationId)
+  }
+
+  // Handle mouse move for dragging
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!draggingId) return
+      
+      const mousePos = getMousePos(e)
+      const newX = mousePos.x - dragOffset.x
+      const newY = mousePos.y - dragOffset.y
+      
+      setAnnotations(prev => prev.map(ann => 
+        ann.id === draggingId 
+          ? { ...ann, x: Math.max(0, newX), y: Math.max(0, newY) }
+          : ann
+      ))
+    }
+    
+    const handleMouseUp = () => {
+      setDraggingId(null)
+    }
+    
+    if (draggingId) {
+      window.addEventListener('mousemove', handleMouseMove)
+      window.addEventListener('mouseup', handleMouseUp)
+    }
+    
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [draggingId, dragOffset, getMousePos])
 
   const handleExport = async () => {
     if (!pdfBytes) return
@@ -249,14 +261,15 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: 'text',
-      x: 100 + Math.random() * 200,
-      y: 100 + Math.random() * 200,
+      x: 100,
+      y: 100,
       content: textInput,
       color: selectedColor,
       page: currentPage - 1
     }
     
     setAnnotations([...annotations, newAnnotation])
+    setSelectedAnnotation(newAnnotation.id)
     setTextInput('')
     setShowTextInput(false)
   }
@@ -265,46 +278,58 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: 'rect',
-      x: 100 + Math.random() * 100,
-      y: 100 + Math.random() * 100,
+      x: 100,
+      y: 100,
       width: 200,
       height: 100,
       color: selectedColor,
       page: currentPage - 1
     }
     setAnnotations([...annotations, newAnnotation])
+    setSelectedAnnotation(newAnnotation.id)
   }
 
   const handleAddHighlight = () => {
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: 'highlight',
-      x: 100 + Math.random() * 100,
-      y: 100 + Math.random() * 100,
+      x: 100,
+      y: 100,
       width: 300,
       height: 30,
       color: selectedColor,
       page: currentPage - 1
     }
     setAnnotations([...annotations, newAnnotation])
+    setSelectedAnnotation(newAnnotation.id)
   }
 
   const handleDeleteAnnotation = (id: string) => {
     setAnnotations(annotations.filter(a => a.id !== id))
+    if (selectedAnnotation === id) {
+      setSelectedAnnotation(null)
+    }
   }
 
   const handleClearAll = () => {
     if (confirm('Clear all annotations on this page?')) {
       setAnnotations(annotations.filter(a => a.page !== currentPage - 1))
+      setSelectedAnnotation(null)
     }
   }
 
   const goToPrevPage = () => {
-    if (currentPage > 1) setCurrentPage(currentPage - 1)
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1)
+      setSelectedAnnotation(null)
+    }
   }
 
   const goToNextPage = () => {
-    if (currentPage < totalPages) setCurrentPage(currentPage + 1)
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1)
+      setSelectedAnnotation(null)
+    }
   }
 
   const pageAnnotations = annotations.filter(a => a.page === currentPage - 1)
@@ -448,6 +473,7 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
             </div>
           ) : (
             <div 
+              ref={canvasContainerRef}
               className="relative bg-white shadow-lg inline-block"
               style={{ width: canvasSize.width, height: canvasSize.height }}
             >
@@ -457,12 +483,52 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
                 className="absolute top-0 left-0"
                 style={{ width: canvasSize.width, height: canvasSize.height }}
               />
-              {/* Annotation Canvas - top layer */}
-              <canvas
-                ref={annotationCanvasRef}
-                className="absolute top-0 left-0 pointer-events-none"
-                style={{ width: canvasSize.width, height: canvasSize.height }}
-              />
+              
+              {/* Annotation Layer - HTML elements for drag support */}
+              {pageAnnotations.map((ann) => (
+                <div
+                  key={ann.id}
+                  onMouseDown={(e) => handleMouseDown(e, ann.id)}
+                  className={`absolute cursor-move select-none ${
+                    selectedAnnotation === ann.id ? 'ring-2 ring-blue-500 ring-offset-2' : ''
+                  }`}
+                  style={{
+                    left: ann.x,
+                    top: ann.y,
+                    width: ann.width || 'auto',
+                    height: ann.height || 'auto',
+                  }}
+                  title="Drag to move"
+                >
+                  {ann.type === 'text' && (
+                    <span 
+                      className="font-bold text-base whitespace-nowrap"
+                      style={{ color: ann.color }}
+                    >
+                      {ann.content}
+                    </span>
+                  )}
+                  {ann.type === 'rect' && (
+                    <div
+                      className="border-2"
+                      style={{
+                        width: ann.width || 100,
+                        height: ann.height || 50,
+                        borderColor: ann.color,
+                      }}
+                    />
+                  )}
+                  {ann.type === 'highlight' && (
+                    <div
+                      style={{
+                        width: ann.width || 200,
+                        height: ann.height || 30,
+                        backgroundColor: ann.color + '66',
+                      }}
+                    />
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -475,6 +541,9 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
             </h3>
             <p className="text-xs text-slate-500 mt-1">
               Page {currentPage} of {totalPages}
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              Click and drag to move
             </p>
           </div>
           
@@ -490,7 +559,12 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
               pageAnnotations.map((ann) => (
                 <div
                   key={ann.id}
-                  className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg hover:bg-slate-100"
+                  onClick={() => setSelectedAnnotation(ann.id)}
+                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer ${
+                    selectedAnnotation === ann.id 
+                      ? 'bg-blue-50 ring-1 ring-blue-500' 
+                      : 'bg-slate-50 hover:bg-slate-100'
+                  }`}
                 >
                   <div 
                     className="w-3 h-3 rounded-full flex-shrink-0"
@@ -507,7 +581,10 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
                     )}
                   </div>
                   <button
-                    onClick={() => handleDeleteAnnotation(ann.id)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDeleteAnnotation(ann.id)
+                    }}
                     className="text-slate-400 hover:text-red-600 p-1"
                   >
                     <Trash2 className="w-4 h-4" />
