@@ -40,22 +40,48 @@ RATE_LIMIT_WINDOW = 60  # seconds
 DECRYPT_RATE_LIMIT = 5  # attempts per window
 DECRYPT_WINDOW = 60  # seconds
 
-# Production CORS - update with your actual domains
-ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "https://simplepdf.com",
-    "https://www.simplepdf.com",
-]
+# CORS Configuration
+# For development/testing: set CORS_ALLOW_ALL=true to allow any origin
+# For production: set ALLOWED_ORIGINS=comma-separated list of domains
+CORS_ALLOW_ALL = os.getenv("CORS_ALLOW_ALL", "false").lower() == "true"
+ALLOWED_ORIGINS_STR = os.getenv("ALLOWED_ORIGINS", "")
+
+if CORS_ALLOW_ALL:
+    # Development/testing mode - allow all origins
+    ALLOWED_ORIGINS = ["*"]
+    logger.warning("CORS is set to allow all origins - NOT RECOMMENDED FOR PRODUCTION")
+elif ALLOWED_ORIGINS_STR:
+    # Production mode with specific domains
+    ALLOWED_ORIGINS = [origin.strip() for origin in ALLOWED_ORIGINS_STR.split(",") if origin.strip()]
+else:
+    # Default - localhost for development
+    ALLOWED_ORIGINS = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ]
+    logger.info("Using default CORS origins (localhost)")
 
 # CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
-)
+if "*" in ALLOWED_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["GET", "POST"],
+        allow_headers=["*"],
+    )
+
+logger.info(f"CORS configured with origins: {ALLOWED_ORIGINS}")
 
 # ==================== Security Utilities ====================
 
