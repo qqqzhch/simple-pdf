@@ -57,6 +57,12 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null)
   const renderTaskRef = useRef<any>(null)
   const pdfBytesRef = useRef<Uint8Array | null>(null)
+  const renderCountRef = useRef(0)
+
+  // Log render count
+  renderCountRef.current++
+  console.log('PDFAnnotator render #:', renderCountRef.current)
+  console.log('PDFAnnotator file prop:', file.name)
 
   const colors = [
     { name: 'Red', value: '#ef4444' },
@@ -92,8 +98,10 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
         }
         
         // Store in both state and ref
+        console.log('Setting pdfBytes state and ref...')
         setPdfBytes(bytes)
         pdfBytesRef.current = bytes
+        console.log('pdfBytesRef.current set to:', pdfBytesRef.current ? pdfBytesRef.current.length : 'null')
         
         const loadingTask = pdfjsLib.getDocument({ data: bytes })
         const pdf = await loadingTask.promise
