@@ -522,5 +522,94 @@ def test_encrypt_pdf_empty_password():
     assert response.status_code == 422
 
 
+# ==================== PDF Decrypt Tests ====================
+
+def test_decrypt_pdf_success():
+    """Test decrypting PDF successfully"""
+    # First create an encrypted PDF
+    pdf_bytes = create_test_pdf(3)
+    
+    encrypt_response = client.post(
+        "/api/protect/encrypt",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        data={"password": "test123", "permission": "all"}
+    )
+    
+    assert encrypt_response.status_code == 200
+    encrypted_pdf = encrypt_response.content
+    
+    # Now decrypt it
+    decrypt_response = client.post(
+        "/api/protect/decrypt",
+        files={"file": ("encrypted.pdf", encrypted_pdf, "application/pdf")},
+        data={"password": "test123"}
+    )
+    
+    assert decrypt_response.status_code == 200
+    assert decrypt_response.headers["content-type"] == "application/pdf"
+    assert decrypt_response.headers["X-Decrypted"] == "true"
+
+def test_decrypt_pdf_wrong_password():
+    """Test decrypting PDF with wrong password"""
+    # First create an encrypted PDF
+    pdf_bytes = create_test_pdf(2)
+    
+    encrypt_response = client.post(
+        "/api/protect/encrypt",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        data={"password": "correct_password", "permission": "all"}
+    )
+    
+    assert encrypt_response.status_code == 200
+    encrypted_pdf = encrypt_response.content
+    
+    # Try to decrypt with wrong password
+    decrypt_response = client.post(
+        "/api/protect/decrypt",
+        files={"file": ("encrypted.pdf", encrypted_pdf, "application/pdf")},
+        data={"password": "wrong_password"}
+    )
+    
+    assert decrypt_response.status_code == 400
+    assert "Incorrect password" in decrypt_response.json()["detail"]
+
+def test_decrypt_unencrypted_pdf():
+    """Test decrypting a PDF that is not encrypted"""
+    pdf_bytes = create_test_pdf(2)
+    
+    response = client.post(
+        "/api/protect/decrypt",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        data={"password": "any_password"}
+    )
+    
+    # Should succeed (PDF is already decrypted)
+    assert response.status_code == 200
+
+def test_decrypt_pdf_invalid_file():
+    """Test decrypting non-PDF file"""
+    response = client.post(
+        "/api/protect/decrypt",
+        files={"file": ("test.txt", b"not a pdf", "text/plain")},
+        data={"password": "test123"}
+    )
+    
+    assert response.status_code == 400
+    assert "Only PDF files" in response.json()["detail"]
+
+def test_decrypt_pdf_empty_password():
+    """Test decrypting PDF with empty password"""
+    pdf_bytes = create_test_pdf(2)
+    
+    response = client.post(
+        "/api/protect/decrypt",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        data={"password": ""}
+    )
+    
+    # FastAPI Form validation should reject empty password
+    assert response.status_code == 422
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

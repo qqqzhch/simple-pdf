@@ -973,6 +973,66 @@ async def encrypt_pdf(
         raise HTTPException(500, f"Encryption failed: {str(e)}")
 
 
+# ==================== PDF Decrypt ====================
+
+@app.post("/api/protect/decrypt")
+async def decrypt_pdf(
+    file: UploadFile = File(...),
+    password: str = Form(..., min_length=1)
+):
+    """移除 PDF 密码保护"""
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(400, "Only PDF files are allowed")
+    
+    # 验证文件大小 (50MB)
+    content = await file.read()
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(400, "File too large. Max 50MB allowed.")
+    
+    file_id = str(uuid.uuid4())
+    input_path = TEMP_DIR / f"{file_id}.pdf"
+    output_path = TEMP_DIR / f"decrypted_{file_id}.pdf"
+    
+    try:
+        # 保存上传文件
+        with open(input_path, "wb") as f:
+            f.write(content)
+        
+        # 使用 pikepdf 进行解密
+        import pikepdf
+        
+        try:
+            # 尝试用密码打开
+            pdf = pikepdf.open(str(input_path), password=password)
+        except pikepdf._core.PasswordError:
+            raise HTTPException(400, "Incorrect password")
+        
+        # 保存未加密的 PDF
+        pdf.save(str(output_path))
+        pdf.close()
+        
+        # 启动清理任务
+        asyncio.create_task(cleanup_file(input_path))
+        asyncio.create_task(cleanup_file(output_path))
+        
+        return FileResponse(
+            path=output_path,
+            filename=f"decrypted_{file.filename}",
+            media_type='application/pdf',
+            headers={"X-Decrypted": "true"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # 清理临时文件
+        if input_path.exists():
+            input_path.unlink()
+        if output_path.exists():
+            output_path.unlink()
+        raise HTTPException(500, f"Decryption failed: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     import os
