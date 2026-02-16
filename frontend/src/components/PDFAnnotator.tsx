@@ -224,8 +224,14 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
   }, [pdfBytes])
 
   const handleExport = async () => {
+    console.log('=== EXPORT START ===')
+    console.log('pdfBytes state:', pdfBytes ? pdfBytes.length : 'null')
+    console.log('pdfBytesRef.current:', pdfBytesRef.current ? pdfBytesRef.current.length : 'null')
+    
     // Use ref instead of state to avoid React state issues
     const bytesToExport = pdfBytesRef.current
+    
+    console.log('bytesToExport selected:', bytesToExport ? bytesToExport.length : 'null')
     
     if (!bytesToExport || bytesToExport.length === 0) {
       console.error('PDF bytes ref is empty')
@@ -235,19 +241,32 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
     
     try {
       console.log('Exporting PDF, bytes length:', bytesToExport.length)
-      console.log('First 20 bytes:', Array.from(bytesToExport.slice(0, 20)))
+      console.log('First 50 bytes hex:', Array.from(bytesToExport.slice(0, 50)).map(b => b.toString(16).padStart(2, '0')).join(' '))
+      console.log('First 20 bytes as string:', String.fromCharCode(...bytesToExport.slice(0, 20)))
       
       // Verify PDF header before loading
-      const header = String.fromCharCode(...bytesToExport.slice(0, 5))
-      console.log('PDF header at export:', header)
+      const headerBytes = bytesToExport.slice(0, 5)
+      console.log('Header bytes:', Array.from(headerBytes))
+      const header = String.fromCharCode(...headerBytes)
+      console.log('PDF header at export:', JSON.stringify(header))
+      
+      // Check if bytes were corrupted (all zeros or all same value)
+      const allZeros = bytesToExport.every(b => b === 0)
+      const allSame = bytesToExport.every(b => b === bytesToExport[0])
+      console.log('All zeros:', allZeros)
+      console.log('All same value:', allSame)
+      console.log('First 100 bytes sample:', Array.from(bytesToExport.slice(0, 100)))
       
       if (header !== '%PDF-') {
-        console.error('Invalid PDF header at export:', header)
-        alert('PDF data is corrupted. Please reload the file.')
+        console.error('Invalid PDF header at export:', JSON.stringify(header))
+        console.error('Expected: "%PDF-"')
+        alert('PDF data is corrupted (invalid header: ' + JSON.stringify(header) + '). Please reload the file.')
         return
       }
       
+      console.log('Attempting to load PDF with pdf-lib...')
       const pdfDoc = await PDFDocument.load(bytesToExport)
+      console.log('PDF loaded successfully, pages:', pdfDoc.getPages().length)
       const pages = pdfDoc.getPages()
       const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica)
       
@@ -392,18 +411,30 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
         }
       }
       
+      console.log('Drawing complete, saving PDF...')
       const modifiedPdf = await pdfDoc.save()
+      console.log('PDF saved, size:', modifiedPdf.length)
+      
+      console.log('Creating blob and downloading...')
       const blob = new Blob([modifiedPdf.buffer as ArrayBuffer], { type: 'application/pdf' })
+      console.log('Blob created, size:', blob.size)
+      
       const url = URL.createObjectURL(blob)
+      console.log('Object URL created:', url)
       
       const a = document.createElement('a')
       a.href = url
       a.download = `annotated_${file.name}`
+      console.log('Triggering download...')
       a.click()
       
       URL.revokeObjectURL(url)
+      console.log('=== EXPORT COMPLETE ===')
     } catch (error: any) {
-      console.error('Export error:', error)
+      console.error('=== EXPORT ERROR ===')
+      console.error('Error name:', error.name)
+      console.error('Error message:', error.message)
+      console.error('Error stack:', error.stack)
       if (error.message && error.message.includes('No PDF header')) {
         alert('Export failed: Invalid PDF file. The file may be corrupted or not a valid PDF.')
       } else {
