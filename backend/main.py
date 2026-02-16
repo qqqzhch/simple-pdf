@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from enum import Enum
@@ -10,24 +10,194 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import io
 import subprocess
+import logging
+import time
+from collections import defaultdict
+import re
 
 # PyPDF2 imports
 from PyPDF2 import PdfReader, PdfWriter
 
+# Security imports
+import magic
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="SimplePDF API", version="1.0.0")
+
+# Rate limiting storage
+rate_limit_storage = defaultdict(list)
+failed_decryption_attempts = defaultdict(list)  # Track failed decryption attempts
+
+# Rate limiting configuration
+RATE_LIMIT_REQUESTS = 100  # requests per window
+RATE_LIMIT_WINDOW = 60  # seconds
+DECRYPT_RATE_LIMIT = 5  # attempts per window
+DECRYPT_WINDOW = 60  # seconds
+
+# Production CORS - update with your actual domains
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://simplepdf.com",
+    "https://www.simplepdf.com",
+]
 
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境改具体域名
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+# ==================== Security Utilities ====================
+
+def check_rate_limit(client_ip: str) -> bool:
+    """Check if client has exceeded rate limit"""
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW
+    
+    # Clean old entries and count recent requests
+    requests = rate_limit_storage[client_ip]
+    rate_limit_storage[client_ip] = [req_time for req_time in requests if req_time > window_start]
+    
+    if len(rate_limit_storage[client_ip]) >= RATE_LIMIT_REQUESTS:
+        logger.warning(f"Rate limit exceeded for IP: {client_ip}")
+        return False
+    
+    rate_limit_storage[client_ip].append(now)
+    return True
+
+def check_decrypt_rate_limit(client_ip: str) -> bool:
+    """Check if client has exceeded decryption rate limit"""
+    now = time.time()
+    window_start = now - DECRYPT_WINDOW
+    
+    # Clean old entries
+    attempts = failed_decryption_attempts[client_ip]
+    failed_decryption_attempts[client_ip] = [t for t in attempts if t > window_start]
+    
+    if len(failed_decryption_attempts[client_ip]) >= DECRYPT_RATE_LIMIT:
+        logger.warning(f"Decrypt rate limit exceeded for IP: {client_ip}")
+        return False
+    
+    return True
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitize filename to prevent path traversal and other attacks"""
+    # Remove path separators and other dangerous characters
+    sanitized = re.sub(r'[^\w\-.]', '_', filename)
+    # Limit length
+    if len(sanitized) > 200:
+        name, ext = os.path.splitext(sanitized)
+        sanitized = name[:200] + ext
+    return sanitized
+
+def validate_file_type(content: bytes, expected_type: str = 'pdf') -> bool:
+    """Validate file type using magic bytes"""
+    try:
+        mime = magic.from_buffer(content, mime=True)
+        
+        if expected_type == 'pdf':
+            return mime == 'application/pdf'
+        elif expected_type == 'image':
+            return mime.startswith('image/')
+        elif expected_type == 'office':
+            return mime in [
+                'application/pdf',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+            ]
+        return True
+    except Exception as e:
+        logger.error(f"File type validation error: {e}")
+        return False
+
+def validate_pdf_structure(content: bytes) -> bool:
+    """Basic PDF structure validation"""
+    # Check PDF magic bytes
+    if not content.startswith(b'%PDF'):
+        return False
+    
+    # Check for EOF marker
+    if b'%%EOF' not in content:
+        return False
+    
+    # Check file size (prevent zip bomb)
+    if len(content) > 50 * 1024 * 1024:  # 50MB
+        return False
+    
+    return True
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Global rate limiting middleware"""
+    # Skip health check
+    if request.url.path == "/api/health":
+        return await call_next(request)
+    
+    client_ip = request.client.host
+    
+    if not check_rate_limit(client_ip):
+        logger.warning(f"Rate limit blocked request from {client_ip}")
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={"detail": "Rate limit exceeded. Please try again later."}
+        )
+    
+    return await call_next(request)
 
 # 临时文件目录
 TEMP_DIR = Path("/tmp/simplepdf")
 TEMP_DIR.mkdir(exist_ok=True)
+
+# Maximum file size (50MB)
+MAX_FILE_SIZE = 50 * 1024 * 1024
+
+async def secure_file_upload(file: UploadFile, expected_type: str = 'pdf') -> tuple[bytes, str]:
+    """
+    Secure file upload with multiple validation layers
+    Returns: (content, sanitized_filename)
+    """
+    # Check filename
+    if not file.filename:
+        raise HTTPException(400, "No filename provided")
+    
+    # Sanitize filename
+    safe_filename = sanitize_filename(file.filename)
+    
+    # Read content
+    content = await file.read()
+    
+    # Check file size
+    if len(content) == 0:
+        raise HTTPException(400, "File is empty")
+    
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(400, f"File too large. Max {MAX_FILE_SIZE // 1024 // 1024}MB allowed.")
+    
+    # Check file type using magic bytes
+    if not validate_file_type(content, expected_type):
+        logger.warning(f"Invalid file type detected for {safe_filename}")
+        raise HTTPException(400, f"Invalid file type. Expected {expected_type}")
+    
+    # Additional PDF validation
+    if expected_type == 'pdf' and not validate_pdf_structure(content):
+        logger.warning(f"Invalid PDF structure for {safe_filename}")
+        raise HTTPException(400, "Invalid PDF file structure")
+    
+    # Log successful validation
+    logger.info(f"File upload validated: {safe_filename}, size: {len(content)} bytes")
+    
+    return content, safe_filename
 
 # 文件清理任务
 async def cleanup_file(file_path: Path, delay: int = 300):
@@ -43,13 +213,8 @@ async def cleanup_file(file_path: Path, delay: int = 300):
 @app.post("/api/convert/pdf-to-excel")
 async def convert_pdf_to_excel(file: UploadFile = File(...)):
     """PDF转Excel - 提取表格数据"""
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(400, "Only PDF files are allowed")
-    
-    # 验证文件大小 (50MB)
-    content = await file.read()
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(400, "File too large. Max 50MB allowed.")
+    # 安全文件上传验证
+    content, safe_filename = await secure_file_upload(file, expected_type='pdf')
     
     import pdfplumber
     import openpyxl
@@ -157,14 +322,8 @@ async def convert_pdf_to_excel(file: UploadFile = File(...)):
 @app.post("/api/convert/pdf-to-word")
 async def convert_pdf_to_word(file: UploadFile = File(...)):
     """PDF转Word"""
-    # 验证文件类型
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(400, "Only PDF files are allowed")
-    
-    # 验证文件大小 (50MB)
-    content = await file.read()
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(400, "File too large. Max 50MB allowed.")
+    # 安全文件上传验证
+    content, safe_filename = await secure_file_upload(file, expected_type='pdf')
     
     # 生成唯一ID
     file_id = str(uuid.uuid4())
@@ -857,18 +1016,17 @@ class Permission(str, Enum):
 
 @app.post("/api/protect/encrypt")
 async def encrypt_pdf(
+    request: Request,
     file: UploadFile = File(...),
     password: str = Form(..., min_length=1),
     permission: Permission = Form(Permission.ALL)
 ):
     """为 PDF 添加密码保护"""
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(400, "Only PDF files are allowed")
+    client_ip = request.client.host
+    logger.info(f"Encrypt request from {client_ip}, permission: {permission.value}")
     
-    # 验证文件大小 (50MB)
-    content = await file.read()
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(400, "File too large. Max 50MB allowed.")
+    # 安全文件上传验证
+    content, safe_filename = await secure_file_upload(file, expected_type='pdf')
     
     file_id = str(uuid.uuid4())
     input_path = TEMP_DIR / f"{file_id}.pdf"
@@ -977,17 +1135,23 @@ async def encrypt_pdf(
 
 @app.post("/api/protect/decrypt")
 async def decrypt_pdf(
+    request: Request,
     file: UploadFile = File(...),
     password: str = Form(..., min_length=1)
 ):
-    """移除 PDF 密码保护"""
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(400, "Only PDF files are allowed")
+    """移除 PDF 密码保护 - 带限流保护"""
+    client_ip = request.client.host
     
-    # 验证文件大小 (50MB)
-    content = await file.read()
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(400, "File too large. Max 50MB allowed.")
+    # 检查解密限流
+    if not check_decrypt_rate_limit(client_ip):
+        logger.warning(f"Decrypt rate limit exceeded for IP: {client_ip}")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many decryption attempts. Please try again later."
+        )
+    
+    # 安全文件上传验证
+    content, safe_filename = await secure_file_upload(file, expected_type='pdf')
     
     file_id = str(uuid.uuid4())
     input_path = TEMP_DIR / f"{file_id}.pdf"
@@ -1004,7 +1168,11 @@ async def decrypt_pdf(
         try:
             # 尝试用密码打开
             pdf = pikepdf.open(str(input_path), password=password)
+            logger.info(f"PDF decrypted successfully: {safe_filename}")
         except pikepdf._core.PasswordError:
+            # 记录失败尝试
+            failed_decryption_attempts[client_ip].append(time.time())
+            logger.warning(f"Failed decryption attempt from {client_ip} for file: {safe_filename}")
             raise HTTPException(400, "Incorrect password")
         
         # 保存未加密的 PDF
@@ -1017,7 +1185,7 @@ async def decrypt_pdf(
         
         return FileResponse(
             path=output_path,
-            filename=f"decrypted_{file.filename}",
+            filename=f"decrypted_{safe_filename}",
             media_type='application/pdf',
             headers={"X-Decrypted": "true"}
         )
