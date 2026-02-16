@@ -1,19 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { PDFDocument, rgb as pdfRgb, StandardFonts } from 'pdf-lib'
 import * as pdfjsLib from 'pdfjs-dist'
-import { ArrowLeft, Download, Type, Square, Highlighter, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Download, Type, Square, Highlighter, Trash2, ChevronLeft, ChevronRight, Pen } from 'lucide-react'
 
 // Set worker - use local worker file
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
 
 interface Annotation {
   id: string
-  type: 'text' | 'rect' | 'highlight'
+  type: 'text' | 'rect' | 'highlight' | 'underline' | 'signature' | 'arrow' | 'sticky'
   x: number
   y: number
   width?: number
   height?: number
   content?: string
+  imageData?: string // For signature
   color: string
   page: number
 }
@@ -40,6 +41,8 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
   const [selectedAnnotation, setSelectedAnnotation] = useState<string | null>(null)
   const [textInput, setTextInput] = useState('')
   const [showTextInput, setShowTextInput] = useState(false)
+  const [showSignaturePad, setShowSignaturePad] = useState(false)
+  const [isDrawingSignature, setIsDrawingSignature] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
@@ -49,6 +52,7 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
   
   const canvasContainerRef = useRef<HTMLDivElement>(null)
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null)
+  const signatureCanvasRef = useRef<HTMLCanvasElement>(null)
   const renderTaskRef = useRef<any>(null)
 
   const colors = [
@@ -233,6 +237,25 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
               opacity: 0.3
             })
             break
+          case 'signature':
+            if (annotation.imageData) {
+              try {
+                // Extract base64 data
+                const base64Data = annotation.imageData.split(',')[1]
+                const imageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0))
+                const image = await pdfDoc.embedPng(imageBytes)
+                
+                page.drawImage(image, {
+                  x: annotation.x,
+                  y: height - annotation.y - (annotation.height || 100),
+                  width: annotation.width || 200,
+                  height: annotation.height || 100,
+                })
+              } catch (err) {
+                console.error('Error embedding signature:', err)
+              }
+            }
+            break
         }
       }
       
@@ -314,6 +337,97 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
     }
     setAnnotations([...annotations, newAnnotation])
     setSelectedAnnotation(newAnnotation.id)
+  }
+
+  // Signature functions
+  const handleStartSignature = () => {
+    setShowSignaturePad(true)
+    setIsDrawingSignature(false)
+  }
+
+  const handleClearSignature = () => {
+    const canvas = signatureCanvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+  }
+
+  const handleSaveSignature = () => {
+    const canvas = signatureCanvasRef.current
+    if (!canvas) return
+    
+    // Check if signature is empty
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    const isEmpty = imageData.data.every((pixel, index) => {
+      // Check alpha channel (every 4th value)
+      return index % 4 !== 3 || pixel === 0
+    })
+    
+    if (isEmpty) {
+      alert('Please draw your signature first')
+      return
+    }
+    
+    const dataUrl = canvas.toDataURL('image/png')
+    
+    const centerX = canvasSize.width > 0 ? canvasSize.width / 2 - 100 : 200
+    const centerY = canvasSize.height > 0 ? canvasSize.height / 2 - 50 : 300
+    
+    const newAnnotation: Annotation = {
+      id: Date.now().toString(),
+      type: 'signature',
+      x: centerX,
+      y: centerY,
+      width: 200,
+      height: 100,
+      imageData: dataUrl,
+      color: selectedColor,
+      page: currentPage - 1
+    }
+    
+    setAnnotations([...annotations, newAnnotation])
+    setSelectedAnnotation(newAnnotation.id)
+    setShowSignaturePad(false)
+    handleClearSignature()
+  }
+
+  const handleSignatureMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = signatureCanvasRef.current
+    if (!canvas) return
+    
+    const rect = canvas.getBoundingClientRect()
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    
+    ctx.beginPath()
+    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top)
+    ctx.strokeStyle = selectedColor
+    ctx.lineWidth = 2
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    
+    setIsDrawingSignature(true)
+  }
+
+  const handleSignatureMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawingSignature) return
+    
+    const canvas = signatureCanvasRef.current
+    if (!canvas) return
+    
+    const rect = canvas.getBoundingClientRect()
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    
+    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top)
+    ctx.stroke()
+  }
+
+  const handleSignatureMouseUp = () => {
+    setIsDrawingSignature(false)
   }
 
   const handleDeleteAnnotation = (id: string) => {
@@ -437,6 +551,15 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
             <Highlighter className="w-5 h-5" />
           </button>
           
+          <button
+            onClick={handleStartSignature}
+            disabled={isLoading}
+            className="p-2 sm:p-3 rounded-lg text-slate-600 hover:bg-purple-50 hover:text-purple-600 disabled:opacity-50"
+            title="Add Signature"
+          >
+            <Pen className="w-5 h-5" />
+          </button>
+          
           <div className="flex-1" />
           
           <div className="text-xs text-slate-400 font-medium mb-2">COLOR</div>
@@ -539,6 +662,18 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
                       }}
                     />
                   )}
+                  {ann.type === 'signature' && ann.imageData && (
+                    <img
+                      src={ann.imageData}
+                      alt="Signature"
+                      style={{
+                        width: ann.width || 200,
+                        height: ann.height || 100,
+                        objectFit: 'contain',
+                      }}
+                      draggable={false}
+                    />
+                  )}
                 </div>
               ))}
             </div>
@@ -639,6 +774,52 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
               >
                 Add Text
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Signature Pad Modal */}
+      {showSignaturePad && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="font-semibold text-lg mb-4">Draw Your Signature</h3>
+            <div className="border-2 border-slate-300 rounded-lg mb-4 bg-white">
+              <canvas
+                ref={signatureCanvasRef}
+                width={350}
+                height={150}
+                className="cursor-crosshair w-full touch-none"
+                onMouseDown={handleSignatureMouseDown}
+                onMouseMove={handleSignatureMouseMove}
+                onMouseUp={handleSignatureMouseUp}
+                onMouseLeave={handleSignatureMouseUp}
+              />
+            </div>
+            <div className="flex justify-between items-center">
+              <button
+                onClick={handleClearSignature}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                Clear
+              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setShowSignaturePad(false)
+                    handleClearSignature()
+                  }}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveSignature}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                >
+                  Save Signature
+                </button>
+              </div>
             </div>
           </div>
         </div>
