@@ -319,18 +319,6 @@ function ToolPage() {
   const Icon = tool.icon
   const hasFiles = files.length > 0
 
-  // PDF Annotate: 使用 WASM 编辑器，完全客户端处理
-  if (tool.id === 'pdf-annotate' && files.length > 0) {
-    return (
-      <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading PDF Editor...</div>}>
-        <PDFAnnotator 
-          file={{ file: files[0].file, name: files[0].name }}
-          onBack={() => setFiles([])}
-        />
-      </Suspense>
-    )
-  }
-
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (tool.id === 'image-to-pdf') {
       // Image to PDF: accept images
@@ -1156,6 +1144,18 @@ function ToolPage() {
           Split PDF into {splitConfig.groups.length} file{splitConfig.groups.length > 1 ? 's' : ''}
         </button>
       </motion.div>
+    )
+  }
+
+  // PDF Annotate: 使用 WASM 编辑器，完全客户端处理
+  if (tool.id === 'pdf-annotate' && files.length > 0) {
+    return (
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading PDF Editor...</div>}>
+        <PDFAnnotator 
+          file={{ file: files[0].file, name: files[0].name }}
+          onBack={() => setFiles([])}
+        />
+      </Suspense>
     )
   }
 
