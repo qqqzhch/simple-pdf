@@ -310,9 +310,9 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
   const pageAnnotations = annotations.filter(a => a.page === currentPage - 1)
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
+      <header className="bg-white border-b border-slate-200 flex-shrink-0">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-4">
@@ -368,9 +368,9 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
         </div>
       </header>
 
-      <div className="flex h-[calc(100vh-64px)]">
+      <div className="flex flex-1 overflow-hidden">
         {/* Left Toolbar */}
-        <div className="w-16 sm:w-20 bg-white border-r border-slate-200 py-4 flex flex-col items-center gap-2 overflow-y-auto">
+        <div className="w-16 sm:w-20 bg-white border-r border-slate-200 py-4 flex flex-col items-center gap-2 overflow-y-auto flex-shrink-0">
           <div className="text-xs text-slate-400 font-medium mb-2">TOOLS</div>
           
           <button
@@ -430,7 +430,7 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
         </div>
 
         {/* Canvas Area */}
-        <div className="flex-1 bg-slate-200 overflow-auto p-4 sm:p-8 flex items-center justify-center">
+        <div className="flex-1 bg-slate-200 overflow-auto p-4 sm:p-8 flex items-start justify-center min-h-0">
           {isLoading ? (
             <div className="text-center">
               <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4" />
