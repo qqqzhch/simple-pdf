@@ -72,14 +72,32 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
         setIsLoading(true)
         setError(null)
         
+        console.log('Loading PDF file:', file.name, 'size:', file.file.size)
+        
         const arrayBuffer = await file.file.arrayBuffer()
+        if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+          throw new Error('File is empty')
+        }
+        
         const bytes = new Uint8Array(arrayBuffer)
+        console.log('PDF bytes loaded:', bytes.length, 'bytes')
+        
+        // Verify PDF header
+        const header = String.fromCharCode(...bytes.slice(0, 5))
+        console.log('PDF header:', header)
+        
+        if (header !== '%PDF-') {
+          console.warn('PDF header warning:', header)
+        }
+        
         setPdfBytes(bytes)
         
         const loadingTask = pdfjsLib.getDocument({ data: bytes })
         const pdf = await loadingTask.promise
         setPdfDoc(pdf)
         setTotalPages(pdf.numPages)
+        
+        console.log('PDF loaded successfully, pages:', pdf.numPages)
         
       } catch (err) {
         console.error('Error loading PDF:', err)
@@ -197,6 +215,11 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
     }
   }, [draggingId, dragOffset, getMousePos])
 
+  // Monitor pdfBytes changes
+  useEffect(() => {
+    console.log('pdfBytes updated:', pdfBytes ? pdfBytes.length : 'null')
+  }, [pdfBytes])
+
   const handleExport = async () => {
     if (!pdfBytes || pdfBytes.length === 0) {
       alert('PDF data is empty. Please reload the file.')
@@ -205,6 +228,18 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
     
     try {
       console.log('Exporting PDF, bytes length:', pdfBytes.length)
+      console.log('First 20 bytes:', Array.from(pdfBytes.slice(0, 20)))
+      
+      // Verify PDF header before loading
+      const header = String.fromCharCode(...pdfBytes.slice(0, 5))
+      console.log('PDF header at export:', header)
+      
+      if (header !== '%PDF-') {
+        console.error('Invalid PDF header at export:', header)
+        alert('PDF data is corrupted. Please reload the file.')
+        return
+      }
+      
       const pdfDoc = await PDFDocument.load(pdfBytes)
       const pages = pdfDoc.getPages()
       const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica)
