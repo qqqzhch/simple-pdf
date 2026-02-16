@@ -39,6 +39,120 @@ async def cleanup_file(file_path: Path, delay: int = 300):
     except Exception as e:
         print(f"Cleanup error: {e}")
 
+@app.post("/api/convert/pdf-to-excel")
+async def convert_pdf_to_excel(file: UploadFile = File(...)):
+    """PDF转Excel - 提取表格数据"""
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(400, "Only PDF files are allowed")
+    
+    # 验证文件大小 (50MB)
+    content = await file.read()
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(400, "File too large. Max 50MB allowed.")
+    
+    import pdfplumber
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, Border, Side
+    
+    file_id = str(uuid.uuid4())
+    input_path = TEMP_DIR / f"{file_id}.pdf"
+    output_path = TEMP_DIR / f"{file_id}.xlsx"
+    
+    try:
+        # 保存上传文件
+        with open(input_path, "wb") as f:
+            f.write(content)
+        
+        tables_found = []
+        all_tables = []
+        
+        # 打开PDF提取表格
+        with pdfplumber.open(str(input_path)) as pdf:
+            for page_num, page in enumerate(pdf.pages, 1):
+                tables = page.extract_tables()
+                if tables:
+                    for table_idx, table in enumerate(tables):
+                        if table and len(table) > 0:
+                            tables_found.append({
+                                "page": page_num,
+                                "table_index": table_idx + 1,
+                                "rows": len(table),
+                                "cols": len(table[0]) if table else 0
+                            })
+                            all_tables.append({
+                                "page": page_num,
+                                "table_index": table_idx + 1,
+                                "data": table
+                            })
+        
+        if not all_tables:
+            raise HTTPException(400, "No tables found in PDF")
+        
+        # 创建Excel工作簿
+        wb = openpyxl.Workbook()
+        
+        # 如果有多个表格，每个表格一个sheet
+        # 如果只有一个表格，直接用默认sheet
+        for idx, table_info in enumerate(all_tables):
+            if idx == 0:
+                ws = wb.active
+                ws.title = f"Table_{table_info['page']}_{table_info['table_index']}"
+            else:
+                ws = wb.create_sheet(title=f"Table_{table_info['page']}_{table_info['table_index']}")
+            
+            # 写入表格数据
+            for row_idx, row_data in enumerate(table_info['data'], 1):
+                for col_idx, cell_value in enumerate(row_data, 1):
+                    cell = ws.cell(row=row_idx, column=col_idx, value=cell_value)
+                    cell.alignment = Alignment(wrap_text=True, vertical='top')
+            
+            # 自动调整列宽
+            for column in ws.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if cell.value:
+                            cell_length = len(str(cell.value))
+                            if cell_length > max_length:
+                                max_length = min(cell_length, 50)  # 最大50字符
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                ws.column_dimensions[column_letter].width = adjusted_width
+        
+        # 保存Excel文件
+        wb.save(str(output_path))
+        wb.close()
+        
+        print(f"Extracted {len(all_tables)} tables from PDF")
+        print(f"Tables info: {tables_found}")
+        
+        # 启动清理任务
+        asyncio.create_task(cleanup_file(input_path))
+        asyncio.create_task(cleanup_file(output_path))
+        
+        return FileResponse(
+            path=output_path,
+            filename=file.filename.replace('.pdf', '.xlsx'),
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={
+                "X-Tables-Count": str(len(all_tables)),
+                "X-Tables-Info": str(tables_found)
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # 清理临时文件
+        if input_path.exists():
+            input_path.unlink()
+        if output_path.exists():
+            output_path.unlink()
+        raise HTTPException(500, f"Conversion failed: {str(e)}")
+
+
 @app.post("/api/convert/pdf-to-word")
 async def convert_pdf_to_word(file: UploadFile = File(...)):
     """PDF转Word"""

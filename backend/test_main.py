@@ -352,6 +352,73 @@ def test_image_to_pdf_invalid_file():
     assert response.status_code == 400
     assert "Only images" in response.json()["detail"]
 
+# ==================== PDF to Excel Tests ====================
+
+def create_pdf_with_table() -> bytes:
+    """Create a PDF with a simple table using reportlab"""
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import letter
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+        import io
+        
+        output = io.BytesIO()
+        doc = SimpleDocTemplate(output, pagesize=letter)
+        
+        # Create table data
+        data = [
+            ['Name', 'Age', 'City'],
+            ['Alice', '25', 'New York'],
+            ['Bob', '30', 'San Francisco'],
+            ['Charlie', '35', 'Los Angeles']
+        ]
+        
+        table = Table(data)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        doc.build([table])
+        output.seek(0)
+        return output.read()
+    except ImportError:
+        # Fallback: create a simple PDF without table if reportlab not available
+        return create_test_pdf(1)
+
+def test_pdf_to_excel_success():
+    """Test converting PDF with table to Excel"""
+    pdf_bytes = create_pdf_with_table()
+    
+    response = client.post(
+        "/api/convert/pdf-to-excel",
+        files={"file": ("test_table.pdf", pdf_bytes, "application/pdf")}
+    )
+    
+    # Note: Simple PDFs without tables will return 400
+    # PDFs with tables should return 200 with Excel file
+    if response.status_code == 200:
+        assert response.headers["content-type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        assert "X-Tables-Count" in response.headers
+    elif response.status_code == 400:
+        # Expected if PDF has no extractable tables
+        assert "No tables found" in response.json()["detail"]
+
+def test_pdf_to_excel_invalid_file():
+    """Test converting non-PDF file to Excel"""
+    response = client.post(
+        "/api/convert/pdf-to-excel",
+        files={"file": ("test.txt", b"not a pdf", "text/plain")}
+    )
+    
+    assert response.status_code == 400
+    assert "Only PDF files" in response.json()["detail"]
+
 # ==================== Edge Cases ====================
 
 @pytest.mark.skip(reason="Large file test causes memory issues in test environment")

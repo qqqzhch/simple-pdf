@@ -9,6 +9,8 @@ pypdf2
 pillow
 pdf2image
 img2pdf
+pdfplumber
+openpyxl
 
 # Testing
 pytest
