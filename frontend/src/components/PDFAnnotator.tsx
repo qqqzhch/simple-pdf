@@ -198,9 +198,13 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
   }, [draggingId, dragOffset, getMousePos])
 
   const handleExport = async () => {
-    if (!pdfBytes) return
+    if (!pdfBytes || pdfBytes.length === 0) {
+      alert('PDF data is empty. Please reload the file.')
+      return
+    }
     
     try {
+      console.log('Exporting PDF, bytes length:', pdfBytes.length)
       const pdfDoc = await PDFDocument.load(pdfBytes)
       const pages = pdfDoc.getPages()
       const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica)
@@ -356,9 +360,13 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
       a.click()
       
       URL.revokeObjectURL(url)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Export error:', error)
-      alert('Export failed. Please try again.')
+      if (error.message && error.message.includes('No PDF header')) {
+        alert('Export failed: Invalid PDF file. The file may be corrupted or not a valid PDF.')
+      } else {
+        alert('Export failed: ' + (error.message || 'Unknown error'))
+      }
     }
   }
 
