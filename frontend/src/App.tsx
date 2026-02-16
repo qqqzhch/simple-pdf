@@ -1,4 +1,4 @@
-import { useState, useCallback, lazy, Suspense } from 'react'
+import { useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDropzone } from 'react-dropzone'
 import { filesize } from 'filesize'
@@ -7,9 +7,6 @@ import {
   FileUp, Combine, Scissors, ArrowLeft, Shield, Clock
 } from 'lucide-react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-
-// Lazy load PDFAnnotator to reduce initial bundle size
-const PDFAnnotator = lazy(() => import('./components/PDFAnnotator'))
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -25,7 +22,7 @@ interface PDFFile {
   resultUrl?: string
 }
 
-type ToolType = 'convert' | 'merge' | 'split' | 'compress' | 'pdf-to-image' | 'image-to-pdf' | 'pdf-to-excel' | 'pdf-to-ppt' | 'encrypt' | 'decrypt' | 'watermark' | 'pdf-annotate'
+type ToolType = 'convert' | 'merge' | 'split' | 'compress' | 'pdf-to-image' | 'image-to-pdf' | 'pdf-to-excel' | 'pdf-to-ppt' | 'encrypt' | 'decrypt' | 'watermark'
 
 interface ToolConfig {
   id: ToolType
@@ -146,16 +143,6 @@ const tools: ToolConfig[] = [
     longDescription: 'Add text or image watermarks to your PDF files. Protect your documents with custom watermarks.',
     icon: FileText,
     color: 'from-indigo-500 to-purple-600',
-    acceptedFiles: 1,
-    outputExt: '.pdf'
-  },
-  {
-    id: 'pdf-annotate',
-    label: 'PDF Annotate',
-    description: 'Add text, sign, highlight (WASM)',
-    longDescription: 'Add text, signatures, highlights and shapes to your PDF - all processed locally in your browser for maximum privacy.',
-    icon: FileText,
-    color: 'from-yellow-500 to-amber-600',
     acceptedFiles: 1,
     outputExt: '.pdf'
   }
@@ -461,11 +448,6 @@ function ToolPage() {
       ))
     } else if (tool.id === 'encrypt' || tool.id === 'decrypt' || tool.id === 'watermark') {
       // Encrypt/Decrypt/Watermark: 设置文件为 ready，等待用户配置后点击转换
-      setFiles(prev => prev.map(f => 
-        pdfFiles.some(pf => pf.id === f.id) ? { ...f, status: 'ready', progress: 100 } : f
-      ))
-    } else if (tool.id === 'pdf-annotate') {
-      // PDF Annotate: 设置文件为 ready，使用 WASM 编辑器
       setFiles(prev => prev.map(f => 
         pdfFiles.some(pf => pf.id === f.id) ? { ...f, status: 'ready', progress: 100 } : f
       ))
@@ -1144,18 +1126,6 @@ function ToolPage() {
           Split PDF into {splitConfig.groups.length} file{splitConfig.groups.length > 1 ? 's' : ''}
         </button>
       </motion.div>
-    )
-  }
-
-  // PDF Annotate: 使用 WASM 编辑器，完全客户端处理
-  if (tool.id === 'pdf-annotate' && files.length > 0) {
-    return (
-      <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading PDF Editor...</div>}>
-        <PDFAnnotator 
-          file={{ file: files[0].file, name: files[0].name }}
-          onBack={() => setFiles([])}
-        />
-      </Suspense>
     )
   }
 

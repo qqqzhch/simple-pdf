@@ -17,7 +17,6 @@ const routes = [
   { path: '/tool/encrypt', title: 'Encrypt PDF Online - Password Protect Free | SimplePDF', description: 'Add password protection to PDF files online for free. Secure your documents with AES-256 encryption.' },
   { path: '/tool/decrypt', title: 'Decrypt PDF Online - Remove Password Free | SimplePDF', description: 'Remove password protection from PDF files online for free. Unlock your PDF documents.' },
   { path: '/tool/watermark', title: 'Add Watermark to PDF - Free Online | SimplePDF', description: 'Add text or image watermarks to PDF files online for free. Protect your documents with custom watermarks.' },
-  { path: '/tool/pdf-annotate', title: 'Annotate PDF Online - Add Text, Highlight Free | SimplePDF', description: 'Add text, highlights, and annotations to PDF files online for free. All processing happens locally in your browser for maximum privacy.' },
 ]
 
 async function prerender() {
