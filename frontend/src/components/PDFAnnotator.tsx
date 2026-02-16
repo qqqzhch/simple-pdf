@@ -120,6 +120,77 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
     loadPDF()
   }, [file])
 
+  // Test function: create a simple PDF and test export
+  const handleTestExport = async () => {
+    console.log('=== TEST EXPORT WITH GENERATED PDF ===')
+    try {
+      // Create a simple PDF using pdf-lib
+      const testPdfDoc = await PDFDocument.create()
+      const page = testPdfDoc.addPage([612, 792])
+      
+      // Add some text
+      page.drawText('Test PDF Document', {
+        x: 50,
+        y: 700,
+        size: 30,
+        color: pdfRgb(0, 0, 0)
+      })
+      
+      page.drawText('This is a test page for PDF Annotator', {
+        x: 50,
+        y: 650,
+        size: 16,
+        color: pdfRgb(0.5, 0.5, 0.5)
+      })
+      
+      // Save the PDF
+      const pdfBytes = await testPdfDoc.save()
+      console.log('Test PDF created, size:', pdfBytes.length)
+      
+      // Store in ref
+      pdfBytesRef.current = pdfBytes
+      setPdfBytes(pdfBytes)
+      
+      // Try to export with annotations
+      console.log('Now attempting export...')
+      
+      // Create final PDF with annotations
+      const finalPdf = await PDFDocument.load(pdfBytes)
+      const helveticaFont = await finalPdf.embedFont(StandardFonts.Helvetica)
+      
+      // Add a test annotation
+      const firstPage = finalPdf.getPages()[0]
+      firstPage.drawText('Test Annotation', {
+        x: 100,
+        y: 500,
+        size: 20,
+        font: helveticaFont,
+        color: pdfRgb(1, 0, 0)
+      })
+      
+      const finalBytes = await finalPdf.save()
+      console.log('Final PDF saved, size:', finalBytes.length)
+      
+      // Download
+      const blob = new Blob([finalBytes.buffer as ArrayBuffer], { type: 'application/pdf' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'test_export.pdf'
+      a.click()
+      URL.revokeObjectURL(url)
+      
+      console.log('=== TEST EXPORT SUCCESS ===')
+      alert('Test export successful! Check downloads.')
+      
+    } catch (err: any) {
+      console.error('=== TEST EXPORT FAILED ===')
+      console.error('Error:', err)
+      console.error('Stack:', err.stack)
+      alert('Test export failed: ' + err.message)
+    }
+  }
+
   // Render PDF page
   useEffect(() => {
     const renderPDFPage = async () => {
@@ -889,6 +960,18 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
             title="Clear Page"
           >
             <Trash2 className="w-5 h-5" />
+          </button>
+          
+          <div className="flex-1" />
+          
+          {/* Test Export Button */}
+          <div className="text-xs text-slate-400 font-medium mb-2">DEBUG</div>
+          <button
+            onClick={handleTestExport}
+            className="p-2 sm:p-3 rounded-lg text-slate-600 hover:bg-gray-100 hover:text-gray-800"
+            title="Test Export (creates test PDF)"
+          >
+            <span className="text-xs font-bold">TEST</span>
           </button>
         </div>
 
