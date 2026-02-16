@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { PDFDocument, rgb as pdfRgb, StandardFonts } from 'pdf-lib'
 import * as pdfjsLib from 'pdfjs-dist'
 import { ArrowLeft, Download, Type, Square, Highlighter, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -35,20 +35,21 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
   const [totalPages, setTotalPages] = useState(0)
   const [scale] = useState(1.5)
   const [annotations, setAnnotations] = useState<Annotation[]>([])
-  const [selectedColor, setSelectedColor] = useState('#000000')
+  const [selectedColor, setSelectedColor] = useState('#ef4444')
   const [textInput, setTextInput] = useState('')
   const [showTextInput, setShowTextInput] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [renderKey, setRenderKey] = useState(0) // Force re-render
   
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const pageRenderRef = useRef<HTMLCanvasElement | null>(null)
 
   const colors = [
-    { name: 'Black', value: '#000000' },
     { name: 'Red', value: '#ef4444' },
     { name: 'Blue', value: '#3b82f6' },
     { name: 'Green', value: '#22c55e' },
+    { name: 'Black', value: '#000000' },
     { name: 'Yellow', value: '#eab308' },
   ]
 
@@ -63,7 +64,6 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
         const bytes = new Uint8Array(arrayBuffer)
         setPdfBytes(bytes)
         
-        // Load with pdf.js for rendering
         const loadingTask = pdfjsLib.getDocument({ data: bytes })
         const pdf = await loadingTask.promise
         setPdfDoc(pdf)
@@ -79,57 +79,91 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
     loadPDF()
   }, [file])
 
-  // Render page
-  const renderPage = useCallback(async () => {
-    if (!pdfDoc || !canvasRef.current) return
-    
-    try {
-      const page = await pdfDoc.getPage(currentPage)
-      const canvas = canvasRef.current
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
-
-      const viewport = page.getViewport({ scale })
-      canvas.width = viewport.width
-      canvas.height = viewport.height
-
-      // Render PDF page
-      await page.render({
-        canvasContext: ctx,
-        viewport: viewport,
-        canvas: canvas
-      } as any).promise
-
-      // Draw annotations for current page
-      const pageAnnotations = annotations.filter(a => a.page === currentPage - 1)
-      pageAnnotations.forEach(ann => {
-        ctx.strokeStyle = ann.color
-        ctx.fillStyle = ann.color
-        ctx.lineWidth = 2
-        
-        switch (ann.type) {
-          case 'text':
-            ctx.font = 'bold 16px Arial'
-            ctx.fillText(ann.content || '', ann.x, ann.y)
-            break
-          case 'rect':
-            ctx.strokeRect(ann.x, ann.y, ann.width || 100, ann.height || 50)
-            break
-          case 'highlight':
-            ctx.fillStyle = ann.color + '66' // 40% opacity
-            ctx.fillRect(ann.x, ann.y, ann.width || 200, ann.height || 30)
-            break
-        }
-      })
-    } catch (err) {
-      console.error('Error rendering page:', err)
-    }
-  }, [pdfDoc, currentPage, scale, annotations])
-
-  // Re-render when dependencies change
+  // Render PDF page (only when pdfDoc or currentPage changes)
   useEffect(() => {
-    renderPage()
-  }, [renderPage])
+    const renderPDFPage = async () => {
+      if (!pdfDoc || !canvasRef.current) return
+      
+      try {
+        const page = await pdfDoc.getPage(currentPage)
+        const canvas = canvasRef.current
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+
+        const viewport = page.getViewport({ scale })
+        canvas.width = viewport.width
+        canvas.height = viewport.height
+
+        // Clear canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+        // Render PDF page
+        await page.render({
+          canvasContext: ctx,
+          viewport: viewport,
+          canvas: canvas
+        } as any).promise
+
+        // Store rendered page for annotation overlay
+        pageRenderRef.current = canvas
+        
+      } catch (err) {
+        console.error('Error rendering page:', err)
+      }
+    }
+    
+    renderPDFPage()
+  }, [pdfDoc, currentPage, scale])
+
+  // Draw annotations (when annotations or renderKey changes)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    // Get page annotations for current page
+    const pageAnnotations = annotations.filter(a => a.page === currentPage - 1)
+    
+    // Redraw PDF first (we need to re-render because we drew on top)
+    if (pdfDoc) {
+      pdfDoc.getPage(currentPage).then(page => {
+        const viewport = page.getViewport({ scale })
+        
+        // Re-render PDF
+        page.render({
+          canvasContext: ctx,
+          viewport: viewport,
+          canvas: canvas
+        } as any).promise.then(() => {
+          // Draw annotations on top
+          pageAnnotations.forEach(ann => {
+            ctx.strokeStyle = ann.color
+            ctx.fillStyle = ann.color
+            ctx.lineWidth = 2
+            
+            switch (ann.type) {
+              case 'text':
+                ctx.font = 'bold 16px Arial'
+                ctx.fillStyle = ann.color
+                ctx.fillText(ann.content || '', ann.x, ann.y)
+                break
+              case 'rect':
+                ctx.strokeStyle = ann.color
+                ctx.lineWidth = 2
+                ctx.strokeRect(ann.x, ann.y, ann.width || 100, ann.height || 50)
+                break
+              case 'highlight':
+                ctx.fillStyle = ann.color + '66' // 40% opacity
+                ctx.fillRect(ann.x, ann.y, ann.width || 200, ann.height || 30)
+                break
+            }
+          })
+        })
+      })
+    }
+  }, [annotations, currentPage, pdfDoc, renderKey, scale])
 
   const handleExport = async () => {
     if (!pdfBytes) return
@@ -201,8 +235,8 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: 'text',
-      x: 100,
-      y: 100,
+      x: 100 + Math.random() * 100, // Random offset to avoid overlap
+      y: 100 + Math.random() * 100,
       content: textInput,
       color: selectedColor,
       page: currentPage - 1
@@ -211,43 +245,48 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
     setAnnotations([...annotations, newAnnotation])
     setTextInput('')
     setShowTextInput(false)
+    setRenderKey(prev => prev + 1) // Force re-render
   }
 
   const handleAddRect = () => {
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: 'rect',
-      x: 100,
-      y: 100,
+      x: 100 + Math.random() * 50,
+      y: 100 + Math.random() * 50,
       width: 200,
       height: 100,
       color: selectedColor,
       page: currentPage - 1
     }
     setAnnotations([...annotations, newAnnotation])
+    setRenderKey(prev => prev + 1)
   }
 
   const handleAddHighlight = () => {
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: 'highlight',
-      x: 100,
-      y: 100,
+      x: 100 + Math.random() * 50,
+      y: 100 + Math.random() * 50,
       width: 300,
       height: 30,
       color: selectedColor,
       page: currentPage - 1
     }
     setAnnotations([...annotations, newAnnotation])
+    setRenderKey(prev => prev + 1)
   }
 
   const handleDeleteAnnotation = (id: string) => {
     setAnnotations(annotations.filter(a => a.id !== id))
+    setRenderKey(prev => prev + 1)
   }
 
   const handleClearAll = () => {
-    if (confirm('Clear all annotations?')) {
-      setAnnotations([])
+    if (confirm('Clear all annotations on this page?')) {
+      setAnnotations(annotations.filter(a => a.page !== currentPage - 1))
+      setRenderKey(prev => prev + 1)
     }
   }
 
@@ -281,7 +320,6 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
             </div>
             
             <div className="flex items-center gap-4">
-              {/* Page navigation */}
               {totalPages > 1 && (
                 <div className="flex items-center gap-2">
                   <button
@@ -305,7 +343,7 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
               )}
               
               <span className="text-sm text-slate-500 hidden sm:inline">
-                {pageAnnotations.length} annotation{pageAnnotations.length !== 1 ? 's' : ''} on this page
+                {pageAnnotations.length} on this page
               </span>
               
               <button
@@ -374,19 +412,16 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
           
           <button
             onClick={handleClearAll}
-            disabled={annotations.length === 0}
+            disabled={pageAnnotations.length === 0}
             className="p-2 sm:p-3 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50"
-            title="Clear All"
+            title="Clear Page"
           >
             <Trash2 className="w-5 h-5" />
           </button>
         </div>
 
         {/* Canvas Area */}
-        <div 
-          ref={containerRef}
-          className="flex-1 bg-slate-200 overflow-auto p-4 sm:p-8 flex items-center justify-center"
-        >
+        <div className="flex-1 bg-slate-200 overflow-auto p-4 sm:p-8 flex items-center justify-center">
           {isLoading ? (
             <div className="text-center">
               <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4" />
@@ -428,7 +463,7 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
               <div className="text-center py-8">
                 <p className="text-sm text-slate-500 mb-2">No annotations on this page</p>
                 <p className="text-xs text-slate-400">
-                  Use tools on the left to add
+                  Click tools on the left to add
                 </p>
               </div>
             ) : (
@@ -460,24 +495,6 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
                 </div>
               ))
             )}
-          </div>
-          
-          {annotations.length > pageAnnotations.length && (
-            <div className="p-4 border-t border-slate-200">
-              <p className="text-xs text-slate-500">
-                + {annotations.length - pageAnnotations.length} annotation(s) on other pages
-              </p>
-            </div>
-          )}
-          
-          <div className="p-4 border-t border-slate-200 mt-auto">
-            <h4 className="text-xs font-medium text-slate-500 mb-2">HOW TO USE</h4>
-            <ul className="text-xs text-slate-400 space-y-1">
-              <li>• Click tool buttons to add</li>
-              <li>• Select color first</li>
-              <li>• Navigate pages with arrows</li>
-              <li>• Click Export to download</li>
-            </ul>
           </div>
         </div>
       </div>
