@@ -258,11 +258,15 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
       return
     }
     
+    // Place in center of page
+    const centerX = canvasSize.width > 0 ? canvasSize.width / 2 - 50 : 200
+    const centerY = canvasSize.height > 0 ? canvasSize.height / 2 - 20 : 300
+    
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: 'text',
-      x: 100,
-      y: 100,
+      x: centerX,
+      y: centerY,
       content: textInput,
       color: selectedColor,
       page: currentPage - 1
@@ -275,11 +279,15 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
   }
 
   const handleAddRect = () => {
+    // Place in center of page
+    const centerX = canvasSize.width > 0 ? canvasSize.width / 2 - 100 : 200
+    const centerY = canvasSize.height > 0 ? canvasSize.height / 2 - 50 : 300
+    
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: 'rect',
-      x: 100,
-      y: 100,
+      x: centerX,
+      y: centerY,
       width: 200,
       height: 100,
       color: selectedColor,
@@ -290,11 +298,15 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
   }
 
   const handleAddHighlight = () => {
+    // Place in center of page
+    const centerX = canvasSize.width > 0 ? canvasSize.width / 2 - 150 : 150
+    const centerY = canvasSize.height > 0 ? canvasSize.height / 2 - 15 : 300
+    
     const newAnnotation: Annotation = {
       id: Date.now().toString(),
       type: 'highlight',
-      x: 100,
-      y: 100,
+      x: centerX,
+      y: centerY,
       width: 300,
       height: 30,
       color: selectedColor,
