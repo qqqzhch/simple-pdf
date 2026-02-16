@@ -56,6 +56,7 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null)
   const signatureCanvasRef = useRef<HTMLCanvasElement>(null)
   const renderTaskRef = useRef<any>(null)
+  const pdfBytesRef = useRef<Uint8Array | null>(null)
 
   const colors = [
     { name: 'Red', value: '#ef4444' },
@@ -90,7 +91,9 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
           console.warn('PDF header warning:', header)
         }
         
+        // Store in both state and ref
         setPdfBytes(bytes)
+        pdfBytesRef.current = bytes
         
         const loadingTask = pdfjsLib.getDocument({ data: bytes })
         const pdf = await loadingTask.promise
@@ -221,17 +224,21 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
   }, [pdfBytes])
 
   const handleExport = async () => {
-    if (!pdfBytes || pdfBytes.length === 0) {
+    // Use ref instead of state to avoid React state issues
+    const bytesToExport = pdfBytesRef.current
+    
+    if (!bytesToExport || bytesToExport.length === 0) {
+      console.error('PDF bytes ref is empty')
       alert('PDF data is empty. Please reload the file.')
       return
     }
     
     try {
-      console.log('Exporting PDF, bytes length:', pdfBytes.length)
-      console.log('First 20 bytes:', Array.from(pdfBytes.slice(0, 20)))
+      console.log('Exporting PDF, bytes length:', bytesToExport.length)
+      console.log('First 20 bytes:', Array.from(bytesToExport.slice(0, 20)))
       
       // Verify PDF header before loading
-      const header = String.fromCharCode(...pdfBytes.slice(0, 5))
+      const header = String.fromCharCode(...bytesToExport.slice(0, 5))
       console.log('PDF header at export:', header)
       
       if (header !== '%PDF-') {
@@ -240,7 +247,7 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
         return
       }
       
-      const pdfDoc = await PDFDocument.load(pdfBytes)
+      const pdfDoc = await PDFDocument.load(bytesToExport)
       const pages = pdfDoc.getPages()
       const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica)
       
