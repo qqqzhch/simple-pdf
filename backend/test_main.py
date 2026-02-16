@@ -611,5 +611,136 @@ def test_decrypt_pdf_empty_password():
     assert response.status_code == 422
 
 
+# ==================== PDF Watermark Tests ====================
+
+def test_add_text_watermark_success():
+    """Test adding text watermark to PDF"""
+    pdf_bytes = create_test_pdf(2)
+    
+    response = client.post(
+        "/api/watermark/add",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        data={
+            "type": "text",
+            "text": "CONFIDENTIAL",
+            "position": "center",
+            "opacity": "0.5",
+            "fontSize": "40",
+            "color": "#FF0000"
+        }
+    )
+    
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["X-Watermark-Type"] == "text"
+    assert response.headers["X-Watermark-Position"] == "center"
+
+def test_add_text_watermark_different_positions():
+    """Test adding text watermark at different positions"""
+    pdf_bytes = create_test_pdf(1)
+    
+    positions = ["center", "top-left", "top-right", "bottom-left", "bottom-right", "tile"]
+    
+    for pos in positions:
+        response = client.post(
+            "/api/watermark/add",
+            files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+            data={
+                "type": "text",
+                "text": "WATERMARK",
+                "position": pos,
+                "opacity": "0.5"
+            }
+        )
+        
+        assert response.status_code == 200, f"Failed for position: {pos}"
+        assert response.headers["X-Watermark-Position"] == pos
+
+def test_add_text_watermark_missing_text():
+    """Test adding text watermark without text parameter"""
+    pdf_bytes = create_test_pdf(1)
+    
+    response = client.post(
+        "/api/watermark/add",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        data={
+            "type": "text",
+            "position": "center"
+        }
+    )
+    
+    assert response.status_code == 400
+    assert "Text is required" in response.json()["detail"]
+
+def test_add_image_watermark_success():
+    """Test adding image watermark to PDF"""
+    pdf_bytes = create_test_pdf(2)
+    img_bytes = create_test_image("png")
+    
+    response = client.post(
+        "/api/watermark/add",
+        files=[
+            ("file", ("test.pdf", pdf_bytes, "application/pdf")),
+            ("image", ("watermark.png", img_bytes, "image/png"))
+        ],
+        data={
+            "type": "image",
+            "position": "center",
+            "opacity": "0.5"
+        }
+    )
+    
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["X-Watermark-Type"] == "image"
+
+def test_add_image_watermark_missing_image():
+    """Test adding image watermark without image file"""
+    pdf_bytes = create_test_pdf(1)
+    
+    response = client.post(
+        "/api/watermark/add",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        data={
+            "type": "image",
+            "position": "center"
+        }
+    )
+    
+    assert response.status_code == 400
+    assert "Image is required" in response.json()["detail"]
+
+def test_add_watermark_invalid_opacity():
+    """Test adding watermark with invalid opacity"""
+    pdf_bytes = create_test_pdf(1)
+    
+    response = client.post(
+        "/api/watermark/add",
+        files={"file": ("test.pdf", pdf_bytes, "application/pdf")},
+        data={
+            "type": "text",
+            "text": "TEST",
+            "opacity": "1.5"  # Invalid: > 1
+        }
+    )
+    
+    assert response.status_code == 400
+    assert "Opacity must be between 0 and 1" in response.json()["detail"]
+
+def test_add_watermark_invalid_file():
+    """Test adding watermark to non-PDF file"""
+    response = client.post(
+        "/api/watermark/add",
+        files={"file": ("test.txt", b"not a pdf", "text/plain")},
+        data={
+            "type": "text",
+            "text": "TEST"
+        }
+    )
+    
+    assert response.status_code == 400
+    assert "Only PDF files" in response.json()["detail"]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

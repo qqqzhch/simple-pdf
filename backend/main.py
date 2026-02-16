@@ -1033,6 +1033,270 @@ async def decrypt_pdf(
         raise HTTPException(500, f"Decryption failed: {str(e)}")
 
 
+# ==================== PDF Watermark ====================
+
+class WatermarkType(str, Enum):
+    """水印类型"""
+    TEXT = "text"
+    IMAGE = "image"
+
+class WatermarkPosition(str, Enum):
+    """水印位置"""
+    CENTER = "center"
+    TOP_LEFT = "top-left"
+    TOP_RIGHT = "top-right"
+    BOTTOM_LEFT = "bottom-left"
+    BOTTOM_RIGHT = "bottom-right"
+    TILE = "tile"
+
+@app.post("/api/watermark/add")
+async def add_watermark(
+    file: UploadFile = File(...),
+    type: WatermarkType = Form(...),
+    text: str = Form(None),
+    image: UploadFile = File(None),
+    position: WatermarkPosition = Form(WatermarkPosition.CENTER),
+    opacity: float = Form(0.5),
+    fontSize: int = Form(40),
+    color: str = Form("#000000")
+):
+    """为 PDF 添加文字或图片水印"""
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(400, "Only PDF files are allowed")
+    
+    # 验证水印类型参数
+    if type == WatermarkType.TEXT and not text:
+        raise HTTPException(400, "Text is required for text watermark")
+    if type == WatermarkType.IMAGE and not image:
+        raise HTTPException(400, "Image is required for image watermark")
+    
+    # 验证透明度范围
+    if opacity < 0 or opacity > 1:
+        raise HTTPException(400, "Opacity must be between 0 and 1")
+    
+    # 验证文件大小 (50MB)
+    content = await file.read()
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(400, "File too large. Max 50MB allowed.")
+    
+    from PIL import Image, ImageDraw, ImageFont
+    from pdf2image import convert_from_path
+    import img2pdf
+    import io
+    
+    file_id = str(uuid.uuid4())
+    input_path = TEMP_DIR / f"{file_id}.pdf"
+    output_dir = TEMP_DIR / f"watermark_{file_id}"
+    output_dir.mkdir(exist_ok=True)
+    output_path = TEMP_DIR / f"watermarked_{file_id}.pdf"
+    
+    image_path = None
+    
+    try:
+        # 保存上传文件
+        with open(input_path, "wb") as f:
+            f.write(content)
+        
+        # 获取 PDF 页数
+        reader = PdfReader(str(input_path))
+        num_pages = len(reader.pages)
+        
+        if num_pages == 0:
+            raise HTTPException(400, "PDF has no pages")
+        
+        # 转换 PDF 为图片
+        pdf_images = convert_from_path(str(input_path), dpi=150)
+        
+        watermarked_images = []
+        
+        for i, pdf_img in enumerate(pdf_images):
+            # 转换为 RGBA 模式以支持透明度
+            if pdf_img.mode != 'RGBA':
+                pdf_img = pdf_img.convert('RGBA')
+            
+            # 创建透明层
+            overlay = Image.new('RGBA', pdf_img.size, (255, 255, 255, 0))
+            
+            if type == WatermarkType.TEXT:
+                draw = ImageDraw.Draw(overlay)
+                
+                # 解析颜色
+                try:
+                    r = int(color[1:3], 16)
+                    g = int(color[3:5], 16)
+                    b = int(color[5:7], 16)
+                except:
+                    r, g, b = 0, 0, 0
+                
+                # 计算字体大小 (基于 DPI 比例)
+                font_size = int(fontSize * 2)  # 调整字体大小
+                
+                try:
+                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
+                except:
+                    font = ImageFont.load_default()
+                
+                # 获取文本尺寸
+                bbox = draw.textbbox((0, 0), text, font=font)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+                
+                # 计算位置
+                img_width, img_height = pdf_img.size
+                
+                if position == WatermarkPosition.CENTER:
+                    x = (img_width - text_width) // 2
+                    y = (img_height - text_height) // 2
+                elif position == WatermarkPosition.TOP_LEFT:
+                    x = 50
+                    y = 50
+                elif position == WatermarkPosition.TOP_RIGHT:
+                    x = img_width - text_width - 50
+                    y = 50
+                elif position == WatermarkPosition.BOTTOM_LEFT:
+                    x = 50
+                    y = img_height - text_height - 50
+                elif position == WatermarkPosition.BOTTOM_RIGHT:
+                    x = img_width - text_width - 50
+                    y = img_height - text_height - 50
+                elif position == WatermarkPosition.TILE:
+                    # 平铺模式
+                    x_spacing = text_width + 100
+                    y_spacing = text_height + 100
+                    alpha = int(255 * opacity)
+                    for row in range(0, img_height + y_spacing, y_spacing):
+                        for col in range(0, img_width + x_spacing, x_spacing):
+                            draw.text((col, row), text, font=font, fill=(r, g, b, alpha))
+                    x, y = None, None  # 已经绘制完成
+                else:
+                    x = (img_width - text_width) // 2
+                    y = (img_height - text_height) // 2
+                
+                # 绘制文字 (非平铺模式)
+                if x is not None:
+                    alpha = int(255 * opacity)
+                    draw.text((x, y), text, font=font, fill=(r, g, b, alpha))
+            
+            else:  # IMAGE type
+                # 如果是第一页，读取并保存水印图片
+                if i == 0:
+                    image_content = await image.read()
+                    image_path = TEMP_DIR / f"watermark_img_{file_id}.png"
+                    with open(image_path, "wb") as f:
+                        f.write(image_content)
+                
+                # 打开水印图片
+                watermark_img = Image.open(image_path)
+                
+                # 计算水印大小 (最大为页面 30%)
+                img_width, img_height = pdf_img.size
+                max_width = int(img_width * 0.3)
+                max_height = int(img_height * 0.3)
+                
+                wm_width, wm_height = watermark_img.size
+                ratio = min(max_width / wm_width, max_height / wm_height, 1.0)
+                new_width = int(wm_width * ratio)
+                new_height = int(wm_height * ratio)
+                
+                watermark_img = watermark_img.resize((new_width, new_height), Image.LANCZOS)
+                
+                # 转换为 RGBA
+                if watermark_img.mode != 'RGBA':
+                    watermark_img = watermark_img.convert('RGBA')
+                
+                # 调整透明度
+                alpha = watermark_img.split()[-1]
+                alpha = alpha.point(lambda p: int(p * opacity))
+                watermark_img.putalpha(alpha)
+                
+                # 计算位置
+                if position == WatermarkPosition.CENTER:
+                    x = (img_width - new_width) // 2
+                    y = (img_height - new_height) // 2
+                elif position == WatermarkPosition.TOP_LEFT:
+                    x = 50
+                    y = 50
+                elif position == WatermarkPosition.TOP_RIGHT:
+                    x = img_width - new_width - 50
+                    y = 50
+                elif position == WatermarkPosition.BOTTOM_LEFT:
+                    x = 50
+                    y = img_height - new_height - 50
+                elif position == WatermarkPosition.BOTTOM_RIGHT:
+                    x = img_width - new_width - 50
+                    y = img_height - new_height - 50
+                elif position == WatermarkPosition.TILE:
+                    # 平铺模式
+                    x_spacing = new_width + 50
+                    y_spacing = new_height + 50
+                    for row in range(0, img_height + y_spacing, y_spacing):
+                        for col in range(0, img_width + x_spacing, x_spacing):
+                            overlay.paste(watermark_img, (col, row), watermark_img)
+                    x, y = None, None
+                else:
+                    x = (img_width - new_width) // 2
+                    y = (img_height - new_height) // 2
+                
+                # 粘贴水印 (非平铺模式)
+                if x is not None:
+                    overlay.paste(watermark_img, (x, y), watermark_img)
+                
+                watermark_img.close()
+            
+            # 合并图层
+            result = Image.alpha_composite(pdf_img, overlay)
+            result = result.convert('RGB')
+            
+            # 保存
+            output_img_path = output_dir / f"page_{i+1}.jpg"
+            result.save(output_img_path, 'JPEG', quality=95)
+            watermarked_images.append(output_img_path)
+            
+            pdf_img.close()
+            overlay.close()
+        
+        # 合并为 PDF
+        with open(output_path, "wb") as f:
+            f.write(img2pdf.convert([str(img) for img in watermarked_images]))
+        
+        # 清理临时文件
+        asyncio.create_task(cleanup_file(input_path))
+        for img_path in watermarked_images:
+            asyncio.create_task(cleanup_file(img_path))
+        asyncio.create_task(cleanup_file(output_path))
+        
+        # 清理目录
+        import shutil
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
+        
+        return FileResponse(
+            path=output_path,
+            filename=f"watermarked_{file.filename}",
+            media_type='application/pdf',
+            headers={
+                "X-Watermark-Type": type.value,
+                "X-Watermark-Position": position.value,
+                "X-Total-Pages": str(num_pages)
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # 清理临时文件
+        if input_path.exists():
+            input_path.unlink()
+        if output_dir.exists():
+            import shutil
+            shutil.rmtree(output_dir)
+        if output_path.exists():
+            output_path.unlink()
+        if image_path and image_path.exists():
+            image_path.unlink()
+        raise HTTPException(500, f"Watermarking failed: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     import os
