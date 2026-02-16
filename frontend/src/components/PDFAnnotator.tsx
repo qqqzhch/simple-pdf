@@ -227,11 +227,25 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
     console.log('=== EXPORT START ===')
     console.log('pdfBytes state:', pdfBytes ? pdfBytes.length : 'null')
     console.log('pdfBytesRef.current:', pdfBytesRef.current ? pdfBytesRef.current.length : 'null')
+    console.log('pdfBytesRef.current type:', typeof pdfBytesRef.current)
+    console.log('pdfBytesRef.current instanceof Uint8Array:', pdfBytesRef.current instanceof Uint8Array)
     
     // Use ref instead of state to avoid React state issues
     const bytesToExport = pdfBytesRef.current
     
     console.log('bytesToExport selected:', bytesToExport ? bytesToExport.length : 'null')
+    console.log('bytesToExport type:', typeof bytesToExport)
+    console.log('bytesToExport instanceof Uint8Array:', bytesToExport instanceof Uint8Array)
+    
+    // Try to access first byte
+    if (bytesToExport) {
+      try {
+        console.log('First byte:', bytesToExport[0])
+        console.log('Type of first byte:', typeof bytesToExport[0])
+      } catch (e) {
+        console.error('Error accessing first byte:', e)
+      }
+    }
     
     if (!bytesToExport || bytesToExport.length === 0) {
       console.error('PDF bytes ref is empty')
@@ -752,7 +766,16 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
               </span>
               
               <button
-                onClick={handleExport}
+                onClick={() => {
+                  console.log('Export button clicked!')
+                  console.log('pdfBytesRef.current exists:', !!pdfBytesRef.current)
+                  console.log('pdfBytes exists:', !!pdfBytes)
+                  try {
+                    handleExport()
+                  } catch (err) {
+                    console.error('Error calling handleExport:', err)
+                  }
+                }}
                 disabled={annotations.length === 0 || !pdfBytes}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
