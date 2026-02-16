@@ -22,7 +22,7 @@ interface PDFFile {
   resultUrl?: string
 }
 
-type ToolType = 'convert' | 'merge' | 'split' | 'compress' | 'pdf-to-image' | 'image-to-pdf'
+type ToolType = 'convert' | 'merge' | 'split' | 'compress' | 'pdf-to-image' | 'image-to-pdf' | 'pdf-to-excel'
 
 interface ToolConfig {
   id: ToolType
@@ -45,6 +45,16 @@ const tools: ToolConfig[] = [
     color: 'from-blue-500 to-indigo-600',
     acceptedFiles: 1,
     outputExt: '.docx'
+  },
+  {
+    id: 'pdf-to-excel',
+    label: 'PDF to Excel',
+    description: 'Extract tables to XLSX',
+    longDescription: 'Extract tables from PDF files into Excel spreadsheets. Perfect for financial reports, invoices, and data analysis.',
+    icon: FileUp,
+    color: 'from-green-500 to-emerald-600',
+    acceptedFiles: 1,
+    outputExt: '.xlsx'
   },
   {
     id: 'merge',
@@ -364,7 +374,7 @@ function ToolPage() {
     
     setFiles(prev => [...prev, ...pdfFiles])
     
-    if (tool.id === 'convert') {
+    if (tool.id === 'convert' || tool.id === 'pdf-to-excel') {
       pdfFiles.forEach(convertPDF)
     } else if (tool.id === 'compress') {
       pdfFiles.forEach(compressPDF)
@@ -514,7 +524,12 @@ function ToolPage() {
     ))
 
     try {
-      const response = await fetch(`${API_URL}/api/convert/pdf-to-word`, {
+      // Determine the correct API endpoint based on tool type
+      const apiEndpoint = tool?.id === 'pdf-to-excel' 
+        ? '/api/convert/pdf-to-excel'
+        : '/api/convert/pdf-to-word'
+
+      const response = await fetch(`${API_URL}${apiEndpoint}`, {
         method: 'POST',
         body: formData
       })
