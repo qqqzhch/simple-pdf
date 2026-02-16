@@ -3,8 +3,8 @@ import { PDFDocument, rgb as pdfRgb, StandardFonts } from 'pdf-lib'
 import * as pdfjsLib from 'pdfjs-dist'
 import { ArrowLeft, Download, Type, Square, Highlighter, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 
-// Set worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+// Set worker - use local worker or CDN with correct version
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.624/pdf.worker.min.mjs`
 
 interface Annotation {
   id: string
