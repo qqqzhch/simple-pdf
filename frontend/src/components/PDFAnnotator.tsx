@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { PDFDocument, rgb as pdfRgb, StandardFonts } from 'pdf-lib'
 import * as pdfjsLib from 'pdfjs-dist'
-import { ArrowLeft, Download, Type, Square, Highlighter, Trash2, ChevronLeft, ChevronRight, Pen, Underline } from 'lucide-react'
+import { ArrowLeft, Download, Type, Square, Highlighter, Trash2, ChevronLeft, ChevronRight, Pen, Underline, ArrowRight } from 'lucide-react'
 
 // Set worker - use local worker file
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
@@ -249,6 +249,38 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
               )
             })
             break
+          case 'arrow':
+            {
+              const arrowWidth = annotation.width || 100
+              const arrowColor = pdfRgb(
+                parseInt(annotation.color.slice(1, 3), 16) / 255,
+                parseInt(annotation.color.slice(3, 5), 16) / 255,
+                parseInt(annotation.color.slice(5, 7), 16) / 255
+              )
+              // Draw arrow line
+              page.drawLine({
+                start: { x: annotation.x, y: height - annotation.y },
+                end: { x: annotation.x + arrowWidth - 10, y: height - annotation.y },
+                thickness: 3,
+                color: arrowColor
+              })
+              // Draw arrow head (triangle)
+              const headX = annotation.x + arrowWidth - 10
+              const headY = height - annotation.y
+              page.drawLine({
+                start: { x: headX, y: headY },
+                end: { x: headX - 8, y: headY - 6 },
+                thickness: 3,
+                color: arrowColor
+              })
+              page.drawLine({
+                start: { x: headX, y: headY },
+                end: { x: headX - 8, y: headY + 6 },
+                thickness: 3,
+                color: arrowColor
+              })
+            }
+            break
           case 'signature':
             if (annotation.imageData) {
               try {
@@ -363,6 +395,25 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
       y: centerY,
       width: 300,
       height: 3,
+      color: selectedColor,
+      page: currentPage - 1
+    }
+    setAnnotations([...annotations, newAnnotation])
+    setSelectedAnnotation(newAnnotation.id)
+  }
+
+  const handleAddArrow = () => {
+    // Place in center of page, pointing right
+    const centerX = canvasSize.width > 0 ? canvasSize.width / 2 - 50 : 200
+    const centerY = canvasSize.height > 0 ? canvasSize.height / 2 - 10 : 300
+    
+    const newAnnotation: Annotation = {
+      id: Date.now().toString(),
+      type: 'arrow',
+      x: centerX,
+      y: centerY,
+      width: 100,
+      height: 20,
       color: selectedColor,
       page: currentPage - 1
     }
@@ -592,6 +643,15 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
           </button>
           
           <button
+            onClick={handleAddArrow}
+            disabled={isLoading}
+            className="p-2 sm:p-3 rounded-lg text-slate-600 hover:bg-orange-50 hover:text-orange-600 disabled:opacity-50"
+            title="Add Arrow"
+          >
+            <ArrowRight className="w-5 h-5" />
+          </button>
+          
+          <button
             onClick={handleStartSignature}
             disabled={isLoading}
             className="p-2 sm:p-3 rounded-lg text-slate-600 hover:bg-purple-50 hover:text-purple-600 disabled:opacity-50"
@@ -711,6 +771,33 @@ export default function PDFAnnotator({ file, onBack }: PDFAnnotatorProps) {
                         borderBottom: `3px solid ${ann.color}`,
                       }}
                     />
+                  )}
+                  {ann.type === 'arrow' && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        width: ann.width || 100,
+                        height: ann.height || 20,
+                      }}
+                    >
+                      <div
+                        style={{
+                          flex: 1,
+                          height: 3,
+                          backgroundColor: ann.color,
+                        }}
+                      />
+                      <div
+                        style={{
+                          width: 0,
+                          height: 0,
+                          borderTop: '8px solid transparent',
+                          borderBottom: '8px solid transparent',
+                          borderLeft: `12px solid ${ann.color}`,
+                        }}
+                      />
+                    </div>
                   )}
                   {ann.type === 'signature' && ann.imageData && (
                     <img

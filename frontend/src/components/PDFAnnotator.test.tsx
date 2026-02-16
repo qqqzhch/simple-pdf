@@ -52,6 +52,7 @@ describe('PDFAnnotator', () => {
       expect(screen.getByTitle('Add Rectangle')).toBeInTheDocument()
       expect(screen.getByTitle('Add Highlight')).toBeInTheDocument()
       expect(screen.getByTitle('Add Underline')).toBeInTheDocument()
+      expect(screen.getByTitle('Add Arrow')).toBeInTheDocument()
       expect(screen.getByTitle('Add Signature')).toBeInTheDocument()
     })
   })
