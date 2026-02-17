@@ -4,7 +4,8 @@ import { useDropzone } from 'react-dropzone'
 import { filesize } from 'filesize'
 import { 
   Upload, FileText, Download, X, Check,
-  FileUp, Combine, Scissors, ArrowLeft, Shield, Clock
+  FileUp, Combine, Scissors, ArrowLeft, Shield, Clock,
+  MessageSquare
 } from 'lucide-react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 
@@ -24,6 +25,67 @@ const trackEvent = (action: string, category: string, label?: string, value?: nu
     event_label: label,
     value: value
   })
+}
+
+// Feedback Modal Component
+function FeedbackModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden"
+      >
+        <div className="flex items-center justify-between p-4 border-b border-slate-200">
+          <h3 className="text-lg font-semibold text-slate-900">Send Feedback</h3>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-slate-500" />
+          </button>
+        </div>
+        <div className="p-0">
+          <iframe
+            src="https://docs.google.com/forms/d/e/1FAIpQLSeeaavCAIhTjqaCRgcPcdYYgvx--974cJXscsZtEF6rwcE7VQ/viewform?embedded=true"
+            width="100%"
+            height="600"
+            frameBorder="0"
+            marginHeight={0}
+            marginWidth={0}
+            className="w-full"
+          >
+            Loading…
+          </iframe>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+// Feedback Button Component
+function FeedbackButton({ onClick }: { onClick: () => void }) {
+  return (
+    <motion.button
+      onClick={onClick}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+      className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-colors"
+    >
+      <MessageSquare className="w-5 h-5" />
+      <span className="font-medium">Feedback</span>
+    </motion.button>
+  )
 }
 
 interface PDFFile {
@@ -173,6 +235,8 @@ function HomePage() {
     document.title = 'Simple to PDF - Free Online PDF Converter & Editor'
   }, [])
 
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
       {/* Header Navigation */}
@@ -291,6 +355,14 @@ function HomePage() {
           </motion.div>
         </div>
       </section>
+
+      {/* Feedback Button */}
+      <FeedbackButton onClick={() => setIsFeedbackOpen(true)} />
+
+      {/* Feedback Modal */}
+      <AnimatePresence>
+        <FeedbackModal isOpen={isFeedbackOpen} onClose={() => setIsFeedbackOpen(false)} />
+      </AnimatePresence>
     </div>
   )
 }
@@ -302,6 +374,7 @@ function ToolPage() {
   const { toolId } = useParams<{ toolId: ToolType }>()
   const navigate = useNavigate()
   const tool = tools.find(t => t.id === toolId)
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
 
   // Update page title based on current tool
   useEffect(() => {
@@ -1899,6 +1972,14 @@ function ToolPage() {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Feedback Button */}
+      <FeedbackButton onClick={() => setIsFeedbackOpen(true)} />
+
+      {/* Feedback Modal */}
+      <AnimatePresence>
+        <FeedbackModal isOpen={isFeedbackOpen} onClose={() => setIsFeedbackOpen(false)} />
+      </AnimatePresence>
     </div>
   )
 }
