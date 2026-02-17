@@ -16,6 +16,7 @@
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
+    "@sentry/react": "^10.39.0",
     "fabric": "^7.1.0",
     "filesize": "^11.0.13",
     "framer-motion": "^12.34.0",
