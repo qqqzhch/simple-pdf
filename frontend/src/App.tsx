@@ -10,6 +10,22 @@ import { Link, useParams, useNavigate } from 'react-router-dom'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
+// Google Analytics helper
+const gtag = (...args: any[]) => {
+  if (typeof window !== 'undefined' && (window as any).gtag) {
+    (window as any).gtag(...args)
+  }
+}
+
+// Track events
+const trackEvent = (action: string, category: string, label?: string, value?: number) => {
+  gtag('event', action, {
+    event_category: category,
+    event_label: label,
+    value: value
+  })
+}
+
 interface PDFFile {
   id: string
   file: File
@@ -250,6 +266,7 @@ function HomePage() {
                 <Link
                   key={tool.id}
                   to={`/tool/${tool.id}`}
+                  onClick={() => trackEvent('tool_selected', 'engagement', tool.label)}
                   className="group bg-white rounded-2xl border-2 border-slate-200 p-6 hover:border-blue-300 hover:shadow-xl transition-all duration-300"
                 >
                   <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${tool.color} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition-transform`}>
@@ -361,12 +378,16 @@ function ToolPage() {
         )
       )
       addFiles(imageFiles)
+      // Track file upload
+      trackEvent('file_upload', 'engagement', tool.label, imageFiles.length)
     } else {
       // Other tools: accept PDF only
       const pdfFiles = acceptedFiles.filter(file => file.type === 'application/pdf')
       addFiles(pdfFiles)
+      // Track file upload
+      trackEvent('file_upload', 'engagement', tool.label, pdfFiles.length)
     }
-  }, [toolId, files.length])
+  }, [toolId, files.length, tool.label])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -653,12 +674,16 @@ function ToolPage() {
       setFiles(prev => prev.map(f => 
         f.id === pdfFile.id ? { ...f, status: 'done', progress: 100, resultUrl: url } : f
       ))
+      // Track conversion success
+      trackEvent('conversion_success', 'conversion', tool?.label || 'PDF Conversion')
     } catch (error) {
       setFiles(prev => prev.map(f => 
         f.id === pdfFile.id 
           ? { ...f, status: 'error', error: 'Conversion failed' }
           : f
       ))
+      // Track conversion failure
+      trackEvent('conversion_failed', 'conversion', tool?.label || 'PDF Conversion')
     }
   }
 
@@ -897,6 +922,8 @@ function ToolPage() {
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
+    // Track file download
+    trackEvent('file_download', 'engagement', tool?.label || 'Download', Math.round(files.reduce((sum, f) => sum + f.size, 0) / 1024))
   }
 
   // 分组大小状态（用于"每N页分割"功能）
