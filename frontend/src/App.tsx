@@ -57,7 +57,7 @@ function FeedbackModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => vo
         </div>
         <div className="p-0">
           <iframe
-            src="https://docs.google.com/forms/d/e/1FAIpQLSeeaavCAIhTjqaCRgcPcdYYgvx--974cJXscsZtEF6rwcE7VQ/viewform?embedded=true"
+            src="https://form.typeform.com/to/JG0F52cg"
             width="100%"
             height="600"
             frameBorder="0"
