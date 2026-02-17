@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDropzone } from 'react-dropzone'
 import { filesize } from 'filesize'
@@ -152,6 +152,11 @@ const tools: ToolConfig[] = [
 // HOME PAGE
 // ============================================
 function HomePage() {
+  // Set homepage title
+  useEffect(() => {
+    document.title = 'Simple to PDF - Free Online PDF Converter & Editor'
+  }, [])
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
       <section className="pt-16 pb-12">
@@ -253,6 +258,19 @@ function ToolPage() {
   const { toolId } = useParams<{ toolId: ToolType }>()
   const navigate = useNavigate()
   const tool = tools.find(t => t.id === toolId)
+
+  // Update page title based on current tool
+  useEffect(() => {
+    if (tool) {
+      document.title = `${tool.label} - Simple to PDF`
+    } else {
+      document.title = 'Simple to PDF - Free Online PDF Converter & Editor'
+    }
+    // Cleanup: reset to default title when unmounting
+    return () => {
+      document.title = 'Simple to PDF - Free Online PDF Converter & Editor'
+    }
+  }, [tool])
   
   const [files, setFiles] = useState<PDFFile[]>([])
   // 分组类型
