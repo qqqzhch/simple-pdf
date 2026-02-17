@@ -6,7 +6,7 @@ WORKDIR /app
 ARG CACHEBUST=1
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y ghostscript poppler-utils && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ghostscript poppler-utils libmagic1 && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY backend/requirements.txt .

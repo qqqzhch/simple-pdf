@@ -16,7 +16,8 @@ RUN apt-get update && \
         swig \
         libxml2-dev \
         libxslt1-dev \
-        zlib1g-dev && \
+        zlib1g-dev \
+        libmagic1 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
