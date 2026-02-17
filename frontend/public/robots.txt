@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://www.simpletopdf.com/sitemap.xml
+
+# Disallow API endpoints (if any are exposed)
+Disallow: /api/
+
+# Crawl-delay for bots
+Crawl-delay: 1
