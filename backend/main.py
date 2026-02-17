@@ -54,14 +54,15 @@ elif ALLOWED_ORIGINS_STR:
     # Production mode with specific domains
     ALLOWED_ORIGINS = [origin.strip() for origin in ALLOWED_ORIGINS_STR.split(",") if origin.strip()]
 else:
-    # Default - localhost for development
+    # Default - production domains + localhost for development
     ALLOWED_ORIGINS = [
+        "https://www.simpletopdf.com",
         "http://localhost:3000",
         "http://localhost:5173",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
     ]
-    logger.info("Using default CORS origins (localhost)")
+    logger.info("Using default CORS origins (production + localhost)")
 
 # CORS
 if "*" in ALLOWED_ORIGINS:
